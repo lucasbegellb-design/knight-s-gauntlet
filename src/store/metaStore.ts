@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { talentRegistry } from '../data/talents';
 import { costForRank } from '../engine/talents';
+import { classRegistry } from '../data/classes';
+import { Rng } from '../engine/rng';
+import type { Rarity } from '../data/rarity';
 
 const STORAGE_KEY = 'knights-gauntlet-meta-v1';
 const MAX_FORGE_LEVEL = 20;
@@ -43,12 +46,37 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   discoveredCompanionIds: [],
 };
 
-export type Screen = 'hub' | 'run';
+export type Screen = 'hub' | 'classSelect' | 'run';
+
+export interface StartingWeapon {
+  defId: string;
+  rarity: Rarity;
+}
+
+/** Starting-weapon rarity is capped modest (common/rare only) — the loot table is where big rolls belong. */
+const STARTING_WEAPON_RARITY_WEIGHTS: { rarity: Rarity; weight: number }[] = [
+  { rarity: 'common', weight: 70 },
+  { rarity: 'rare', weight: 30 },
+];
+
+function rollStartingWeaponRarity(rng: Rng): Rarity {
+  const total = STARTING_WEAPON_RARITY_WEIGHTS.reduce((sum, entry) => sum + entry.weight, 0);
+  let roll = rng.next() * total;
+  for (const entry of STARTING_WEAPON_RARITY_WEIGHTS) {
+    roll -= entry.weight;
+    if (roll < 0) return entry.rarity;
+  }
+  return 'common';
+}
 
 interface MetaStore extends PersistedMeta {
   screen: Screen;
   hydrated: boolean;
+  /** Chosen at the start of a run on the class-select screen; cleared once a fresh run's WaveManager is built. */
+  selectedClassId: string | null;
+  startingWeapon: StartingWeapon | null;
   setScreen: (screen: Screen) => void;
+  chooseClass: (classId: string) => void;
   depositCurrency: (amount: number) => void;
   purchaseTalentRank: (talentId: string) => void;
   upgradeCompanion: (companionId: string) => void;
@@ -82,7 +110,17 @@ export const useMetaStore = create<MetaStore>((set) => ({
   ...DEFAULT_PERSISTED,
   screen: 'hub',
   hydrated: false,
+  selectedClassId: null,
+  startingWeapon: null,
   setScreen: (screen) => set({ screen }),
+  chooseClass: (classId) =>
+    set(() => {
+      const classDef = classRegistry.get(classId);
+      const rng = new Rng(Date.now());
+      const weaponId = classDef.weaponPool[Math.floor(rng.next() * classDef.weaponPool.length)] ?? classDef.weaponPool[0];
+      const startingWeapon: StartingWeapon | null = weaponId ? { defId: weaponId, rarity: rollStartingWeaponRarity(rng) } : null;
+      return { selectedClassId: classId, startingWeapon, screen: 'run' };
+    }),
   depositCurrency: (amount) => set((state) => ({ currency: state.currency + Math.max(0, amount) })),
   purchaseTalentRank: (talentId) =>
     set((state) => {

@@ -33,6 +33,8 @@ export interface OwnedSpellDisplay {
 
 export interface RunSnapshot {
   waveNumber: number;
+  zoneName: string;
+  heroClassName: string;
   monsterName: string;
   monsterTier: MonsterTier;
   monsterHp: number;
@@ -64,6 +66,8 @@ interface RunStore extends RunSnapshot {
 
 const initialSnapshot: RunSnapshot = {
   waveNumber: 1,
+  zoneName: '',
+  heroClassName: 'Knight',
   monsterName: '',
   monsterTier: 'normal',
   monsterHp: 0,

@@ -15,7 +15,7 @@ function rebuildEngine(manager: WaveManager): void {
 }
 
 function makeMetaBonuses(overrides: Partial<MetaBonuses> = {}): MetaBonuses {
-  return { talentModifiers: [], lootLuckBonus: 0, forgeLevel: 0, companionUpgrades: {}, ...overrides };
+  return { talentModifiers: [], lootLuckBonus: 0, forgeLevel: 0, companionUpgrades: {}, classModifiers: [], ...overrides };
 }
 
 const testHero: HeroDefinition = {
@@ -306,6 +306,28 @@ describe('WaveManager', () => {
     const attackEvent = events.find((e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'hero');
     expect(attackEvent && attackEvent.type === 'combat' && attackEvent.event.type === 'attack' ? attackEvent.event.damage : null).toBe(
       51,
+    );
+  });
+
+  it('seeds a starting weapon into the equipped slot from the constructor', () => {
+    const manager = new WaveManager(testHero, 1, makeMetaBonuses(), { weapon: { defId: 'knights_blade', rarity: 'rare' } });
+    expect(manager.getRunState().equipped.weapon).toEqual({ defId: 'knights_blade', rarity: 'rare' });
+  });
+
+  it('applies class innate modifiers to the heros combat damage', () => {
+    const weakHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 1000, attack: 1, attackIntervalMs: 500 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(weakHero, 1, makeMetaBonuses({ classModifiers: [{ kind: 'flatDamageBonus', value: 25 }] }));
+
+    const events = manager.tick(500);
+
+    const attackEvent = events.find((e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'hero');
+    expect(attackEvent && attackEvent.type === 'combat' && attackEvent.event.type === 'attack' ? attackEvent.event.damage : null).toBe(
+      26,
     );
   });
 
