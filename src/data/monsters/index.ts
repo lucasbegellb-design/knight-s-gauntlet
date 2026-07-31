@@ -12,8 +12,9 @@ export const monsterRegistry = new Registry<MonsterDefinition>();
 
 monsterRegistry.registerAll([goblinGrunt, slime, wolf, skeleton, bat, orcChieftain, ancientWyrm]);
 
-export const normalMonsters = monsterRegistry.all().filter((m) => m.tier === 'normal');
-export const miniBosses = monsterRegistry.all().filter((m) => m.tier === 'miniboss');
-export const bosses = monsterRegistry.all().filter((m) => m.tier === 'boss');
+export const allMonsters = monsterRegistry.all();
+export const normalMonsters = allMonsters.filter((m) => m.tier === 'normal');
+export const miniBosses = allMonsters.filter((m) => m.tier === 'miniboss');
+export const bosses = allMonsters.filter((m) => m.tier === 'boss');
 
 export { goblinGrunt, slime, wolf, skeleton, bat, orcChieftain, ancientWyrm };

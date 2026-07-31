@@ -251,3 +251,83 @@ body {
   color: #9ca3af;
   line-height: 1.4;
 }
+
+.hub-title {
+  margin: 0;
+  font-size: 20px;
+  margin-right: 8px;
+}
+
+.hub-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.hub-card {
+  background: #17171d;
+  border: 1px solid #2a2b33;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.hub-card-title {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+
+.hub-row-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid #24252c;
+  padding-top: 8px;
+}
+
+.hub-row-item.locked {
+  opacity: 0.55;
+}
+
+.hub-item-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hub-item-rank {
+  font-weight: 400;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+.hub-item-description {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.hub-buy-button {
+  flex-shrink: 0;
+  background: #3498db;
+  border: none;
+  color: #ffffff;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.hub-buy-button:disabled {
+  background: #2a2b33;
+  color: #6b7280;
+  cursor: not-allowed;
+}

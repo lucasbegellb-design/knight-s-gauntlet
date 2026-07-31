@@ -1,4 +1,5 @@
 import { useRunStore, type CombatSpeed } from '../store/runStore';
+import { useMetaStore } from '../store/metaStore';
 import { RARITY_COLOR } from '../data/rarity';
 
 const SPEEDS: CombatSpeed[] = [1, 2, 4];
@@ -146,7 +147,7 @@ export function Hud() {
 export function GameOverOverlay() {
   const isGameOver = useRunStore((state) => state.isGameOver);
   const waveNumber = useRunStore((state) => state.waveNumber);
-  const requestRestart = useRunStore((state) => state.requestRestart);
+  const setScreen = useMetaStore((state) => state.setScreen);
 
   if (!isGameOver) return null;
 
@@ -154,8 +155,8 @@ export function GameOverOverlay() {
     <div className="game-over-overlay">
       <div className="game-over-title">Run Over</div>
       <div className="game-over-subtitle">Fell on wave {waveNumber}</div>
-      <button type="button" className="restart-button" onClick={() => requestRestart()}>
-        New Run
+      <button type="button" className="restart-button" onClick={() => setScreen('hub')}>
+        Return to Camp
       </button>
     </div>
   );

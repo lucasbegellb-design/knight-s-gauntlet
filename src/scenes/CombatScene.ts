@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
-import { WaveManager, type WaveEvent } from '../engine/WaveManager';
+import { WaveManager, type MetaBonuses, type WaveEvent } from '../engine/WaveManager';
+import type { LootOption } from '../engine/loot';
 import { xpForNextLevel } from '../engine/heroProgression';
+import { resolveLootLuckBonus, resolveTalentModifiers } from '../engine/talents';
 import type { CombatEvent } from '../engine/types';
 import { knight } from '../data/hero';
 import type { MonsterTier } from '../data/monster.types';
@@ -11,6 +13,7 @@ import { companionRegistry } from '../data/companions';
 import { spellRegistry } from '../data/spells';
 import { useRunStore } from '../store/runStore';
 import type { EquippedDisplay } from '../store/runStore';
+import { useMetaStore } from '../store/metaStore';
 
 const HERO_COLOR = 0x3b82c4;
 const HERO_SIZE = { width: 80, height: 120 };
@@ -52,7 +55,6 @@ export class CombatScene extends Phaser.Scene {
   private heroView!: UnitView;
   private monsterView!: UnitView;
   private allyViews: UnitView[] = [];
-  private lastRestartToken = 0;
   private lastLootChoiceToken = 0;
 
   constructor() {
@@ -60,20 +62,12 @@ export class CombatScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.lastRestartToken = useRunStore.getState().restartToken;
     this.lastLootChoiceToken = useRunStore.getState().lootChoiceRequest?.token ?? 0;
     this.startNewRun();
   }
 
   update(_time: number, delta: number): void {
     const store = useRunStore.getState();
-
-    if (store.restartToken !== this.lastRestartToken) {
-      this.lastRestartToken = store.restartToken;
-      this.lastLootChoiceToken = store.lootChoiceRequest?.token ?? 0;
-      this.startNewRun();
-      return;
-    }
 
     if (store.lootChoiceRequest && store.lootChoiceRequest.token !== this.lastLootChoiceToken) {
       this.lastLootChoiceToken = store.lootChoiceRequest.token;
@@ -90,11 +84,22 @@ export class CombatScene extends Phaser.Scene {
     this.pushSnapshotToStore();
   }
 
+  private buildMetaBonuses(): MetaBonuses {
+    const meta = useMetaStore.getState();
+    return {
+      talentModifiers: resolveTalentModifiers(meta.talentRanks),
+      lootLuckBonus: resolveLootLuckBonus(meta.talentRanks),
+      forgeLevel: meta.forgeLevel,
+      companionUpgrades: meta.companionUpgrades,
+    };
+  }
+
   private startNewRun(): void {
-    this.waveManager = new WaveManager(knight, Date.now());
+    this.waveManager = new WaveManager(knight, Date.now(), this.buildMetaBonuses());
 
     const state = this.waveManager.getCombatState();
     const runState = this.waveManager.getRunState();
+    useMetaStore.getState().discover('monster', state.monster.id);
 
     if (this.heroView) this.destroyUnitView(this.heroView);
     if (this.monsterView) this.destroyUnitView(this.monsterView);
@@ -134,6 +139,7 @@ export class CombatScene extends Phaser.Scene {
         const appearance = MONSTER_APPEARANCE[event.monster.tier];
         this.resizeMonsterView(appearance);
         this.rebuildAllyViews();
+        useMetaStore.getState().discover('monster', event.monster.id);
       }
       if (event.type === 'levelUp') {
         this.showFloatingText(HERO_X, UNIT_Y - 130, 'LEVEL UP!', '#f1c40f');
@@ -141,7 +147,21 @@ export class CombatScene extends Phaser.Scene {
       if (event.type === 'revived') {
         this.showFloatingText(HERO_X, UNIT_Y - 130, 'REVIVED!', '#ff3b6b');
       }
+      if (event.type === 'lootChosen') {
+        this.discoverLootOption(event.option);
+      }
+      if (event.type === 'runOver') {
+        useMetaStore.getState().depositCurrency(this.waveManager.getRunState().gold);
+      }
     }
+  }
+
+  private discoverLootOption(option: LootOption): void {
+    const discover = useMetaStore.getState().discover;
+    if (option.kind === 'relic') discover('relic', option.relic.id);
+    else if (option.kind === 'equipment') discover('equipment', option.equipment.id);
+    else if (option.kind === 'companion') discover('companion', option.companion.id);
+    else if (option.kind === 'spell') discover('spell', option.spell.id);
   }
 
   private handleCombatEvent(event: CombatEvent): void {

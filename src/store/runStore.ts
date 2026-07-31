@@ -55,13 +55,10 @@ export interface RunSnapshot {
 
 interface RunStore extends RunSnapshot {
   speed: CombatSpeed;
-  /** Bumped whenever the player asks for a fresh run; the scene watches this to reset itself. */
-  restartToken: number;
   /** Bumped whenever the player picks a loot option; the scene watches this to apply the pick. */
   lootChoiceRequest: { token: number; index: number } | null;
   setSnapshot: (snapshot: RunSnapshot) => void;
   setSpeed: (speed: CombatSpeed) => void;
-  requestRestart: () => void;
   requestLootChoice: (index: number) => void;
 }
 
@@ -90,11 +87,9 @@ const initialSnapshot: RunSnapshot = {
 export const useRunStore = create<RunStore>((set) => ({
   ...initialSnapshot,
   speed: 1,
-  restartToken: 0,
   lootChoiceRequest: null,
   setSnapshot: (snapshot) => set(snapshot),
   setSpeed: (speed) => set({ speed }),
-  requestRestart: () => set((state) => ({ restartToken: state.restartToken + 1 })),
   requestLootChoice: (index) =>
     set((state) => ({ lootChoiceRequest: { token: (state.lootChoiceRequest?.token ?? 0) + 1, index } })),
 }));
