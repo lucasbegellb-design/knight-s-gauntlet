@@ -1,7 +1,7 @@
 import { CombatEngine } from './CombatEngine';
 import { Rng } from './rng';
 import { applyXpGain, statsForLevel, type HeroProgress } from './heroProgression';
-import { scaledMonsterStats, tierForWave } from './waveScaling';
+import { monsterPoolForWave, scaledMonsterStats, tierForWave, zoneForWave } from './waveScaling';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
 import { generateLootOptions, type LootContext, type LootOption } from './loot';
 import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from './types';
@@ -38,6 +38,8 @@ export interface MetaBonuses {
   lootLuckBonus: number;
   forgeLevel: number;
   companionUpgrades: Record<string, number>;
+  /** Innate modifiers from the player's chosen class (see src/data/classes), active for the whole run. */
+  classModifiers: RelicModifier[];
 }
 
 export const DEFAULT_META_BONUSES: MetaBonuses = {
@@ -45,6 +47,7 @@ export const DEFAULT_META_BONUSES: MetaBonuses = {
   lootLuckBonus: 0,
   forgeLevel: 0,
   companionUpgrades: {},
+  classModifiers: [],
 };
 
 export interface OwnedRelic {
@@ -76,6 +79,8 @@ export interface RunState {
   isGameOver: boolean;
   monsterTier: MonsterTier;
   monsterName: string;
+  zoneId: string;
+  zoneName: string;
   gold: number;
   ownedRelics: OwnedRelic[];
   equipped: EquippedItems;
@@ -93,6 +98,7 @@ export type WaveEvent =
       type: 'waveStarted';
       waveNumber: number;
       monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number };
+      zone: { id: string; name: string; isNewZone: boolean };
     }
   | { type: 'waveCleared'; waveNumber: number; xpGained: number }
   | { type: 'levelUp'; newLevel: number }
@@ -134,7 +140,12 @@ export class WaveManager {
   /** Companion HP carried the same way, keyed by companion id. */
   private pendingCompanionHp = new Map<string, number>();
 
-  constructor(heroDef: HeroDefinition, seed = 1, metaBonuses: MetaBonuses = DEFAULT_META_BONUSES) {
+  constructor(
+    heroDef: HeroDefinition,
+    seed = 1,
+    metaBonuses: MetaBonuses = DEFAULT_META_BONUSES,
+    startingEquipment: Partial<EquippedItems> = {},
+  ) {
     this.heroDef = heroDef;
     this.rng = new Rng(seed);
     this.seed = seed;
@@ -145,9 +156,11 @@ export class WaveManager {
       isGameOver: false,
       monsterTier: 'normal',
       monsterName: '',
+      zoneId: '',
+      zoneName: '',
       gold: 0,
       ownedRelics: [],
-      equipped: { weapon: null, armor: null, accessory: null },
+      equipped: { weapon: null, armor: null, accessory: null, ...startingEquipment },
       companions: [],
       activeSpells: [],
       passiveSpells: [],
@@ -198,6 +211,7 @@ export class WaveManager {
 
     this.state.isChoosingLoot = false;
     this.state.lootOptions = [];
+    const previousZoneId = this.state.zoneId;
     this.engine = this.buildWaveEngine(this.state.waveNumber + 1, this.pendingHeroHp);
 
     const monster = this.engine.getState().monster;
@@ -205,6 +219,7 @@ export class WaveManager {
       type: 'waveStarted',
       waveNumber: this.state.waveNumber,
       monster: { id: monster.id, name: monster.name, tier: this.state.monsterTier, maxHp: monster.maxHp, attack: monster.attack },
+      zone: { id: this.state.zoneId, name: this.state.zoneName, isNewZone: this.state.zoneId !== previousZoneId },
     });
 
     return events;
@@ -336,6 +351,7 @@ export class WaveManager {
       });
 
     const talentSource: ModifierSource = { modifiers: this.metaBonuses.talentModifiers, count: 1 };
+    const classSource: ModifierSource = { modifiers: this.metaBonuses.classModifiers, count: 1 };
 
     const passiveSpellSources: ModifierSource[] = this.state.passiveSpells.map((owned) => {
       const def = spellRegistry.get(owned.id);
@@ -349,7 +365,14 @@ export class WaveManager {
       .filter((def) => def.role === 'support' && def.auraModifier)
       .map((def) => ({ modifiers: [def.auraModifier as RelicModifier], count: 1 }));
 
-    return aggregateModifiers([...relicSources, ...equipmentSources, ...passiveSpellSources, ...companionAuraSources, talentSource]);
+    return aggregateModifiers([
+      ...relicSources,
+      ...equipmentSources,
+      ...passiveSpellSources,
+      ...companionAuraSources,
+      talentSource,
+      classSource,
+    ]);
   }
 
   /** Builds this wave's AllyUnit/SpellCaster arrays from the owned roster, applying wave-clear healing per companion. */
@@ -400,7 +423,12 @@ export class WaveManager {
     const tier = tierForWave(waveNumber);
     this.state.monsterTier = tier;
 
-    const pool = tier === 'boss' ? bosses : tier === 'miniboss' ? miniBosses : normalMonsters;
+    const zone = zoneForWave(waveNumber);
+    this.state.zoneId = zone.id;
+    this.state.zoneName = zone.name;
+
+    const tierPool = tier === 'boss' ? bosses : tier === 'miniboss' ? miniBosses : normalMonsters;
+    const pool = monsterPoolForWave(waveNumber, tierPool);
     const def = pickFrom(pool, this.rng);
     this.state.monsterName = def.name;
 

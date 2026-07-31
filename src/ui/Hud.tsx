@@ -41,7 +41,9 @@ export function Hud() {
     <div className="hud">
       <div className="hud-row">
         <div className="hud-panel">
-          <div className="hud-label">Wave {state.waveNumber}</div>
+          <div className="hud-label">
+            Wave {state.waveNumber} <span className="hud-sublabel">— {state.zoneName}</span>
+          </div>
           {state.monsterTier !== 'normal' && (
             <div className="tier-badge" style={{ color: TIER_COLOR[state.monsterTier] }}>
               {TIER_LABEL[state.monsterTier]}
@@ -56,7 +58,7 @@ export function Hud() {
 
         <div className="hud-panel">
           <div className="hud-label">Level {state.heroLevel}</div>
-          <div className="hud-sublabel">Knight</div>
+          <div className="hud-sublabel">{state.heroClassName}</div>
           <Bar value={state.heroHp} max={state.heroMaxHp} color="#2ecc71" />
           <div className="hud-value">
             {state.heroHp}/{state.heroMaxHp} HP

@@ -240,7 +240,7 @@ export function Hub() {
         <GeneratedPortrait category="hero" id="knight" size={44} />
         <h2 className="hub-title">Camp</h2>
         <span className="gold-display">{currency} essence</span>
-        <button type="button" className="restart-button" onClick={() => setScreen('run')}>
+        <button type="button" className="restart-button" onClick={() => setScreen('classSelect')}>
           Start Run
         </button>
       </div>

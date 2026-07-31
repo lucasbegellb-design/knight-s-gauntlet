@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyXpGain, statsForLevel, xpForNextLevel } from './heroProgression';
+import { applyXpGain, scaleHeroDefinition, statsForLevel, xpForNextLevel } from './heroProgression';
 import { knight } from '../data/hero';
 
 describe('xpForNextLevel', () => {
@@ -19,6 +19,29 @@ describe('statsForLevel', () => {
     expect(stats.maxHp).toBe(knight.base.maxHp + knight.growth.maxHpPerLevel * 2);
     expect(stats.attack).toBe(knight.base.attack + knight.growth.attackPerLevel * 2);
     expect(stats.attackIntervalMs).toBe(knight.base.attackIntervalMs);
+  });
+});
+
+describe('scaleHeroDefinition', () => {
+  it('leaves stats unchanged with a 1x multiplier', () => {
+    const scaled = scaleHeroDefinition(knight, { maxHp: 1, attack: 1, attackIntervalMs: 1 });
+    expect(scaled.base).toEqual(knight.base);
+    expect(scaled.growth).toEqual(knight.growth);
+  });
+
+  it('scales base stats and growth independently per stat', () => {
+    const scaled = scaleHeroDefinition(knight, { maxHp: 1.5, attack: 0.5, attackIntervalMs: 2 });
+    expect(scaled.base.maxHp).toBe(Math.round(knight.base.maxHp * 1.5));
+    expect(scaled.base.attack).toBe(Math.round(knight.base.attack * 0.5));
+    expect(scaled.base.attackIntervalMs).toBe(Math.round(knight.base.attackIntervalMs * 2));
+    expect(scaled.growth.maxHpPerLevel).toBe(Math.round(knight.growth.maxHpPerLevel * 1.5));
+    expect(scaled.growth.attackPerLevel).toBe(Math.round(knight.growth.attackPerLevel * 0.5));
+  });
+
+  it('does not mutate the original definition', () => {
+    const original = structuredClone(knight);
+    scaleHeroDefinition(knight, { maxHp: 2, attack: 2, attackIntervalMs: 2 });
+    expect(knight).toEqual(original);
   });
 });
 
