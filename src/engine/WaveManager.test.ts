@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { WaveManager, type RunState } from './WaveManager';
+import { WaveManager, type MetaBonuses, type RunState } from './WaveManager';
+import type { CombatEngine } from './CombatEngine';
 import type { HeroDefinition } from '../data/hero.types';
 import { BOSS_WAVE_INTERVAL, MINIBOSS_WAVE_INTERVAL } from './waveScaling';
 import { relicRegistry } from '../data/relics';
 
 function stateOf(manager: WaveManager): RunState {
   return (manager as unknown as { state: RunState }).state;
+}
+
+function rebuildEngine(manager: WaveManager): void {
+  const casted = manager as unknown as { buildWaveEngine: (wave: number) => CombatEngine; engine: CombatEngine };
+  casted.engine = casted.buildWaveEngine(manager.getRunState().waveNumber);
+}
+
+function makeMetaBonuses(overrides: Partial<MetaBonuses> = {}): MetaBonuses {
+  return { talentModifiers: [], lootLuckBonus: 0, forgeLevel: 0, companionUpgrades: {}, ...overrides };
 }
 
 const testHero: HeroDefinition = {
@@ -280,5 +290,58 @@ describe('WaveManager', () => {
       if (events.some((e) => e.type === 'combat' && e.event.type === 'spellCast')) sawSpellCast = true;
     }
     expect(sawSpellCast).toBe(true);
+  });
+
+  it('applies meta talent modifiers to the heros combat damage', () => {
+    const weakHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 1000, attack: 1, attackIntervalMs: 500 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(weakHero, 1, makeMetaBonuses({ talentModifiers: [{ kind: 'flatDamageBonus', value: 50 }] }));
+
+    const events = manager.tick(500);
+
+    const attackEvent = events.find((e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'hero');
+    expect(attackEvent && attackEvent.type === 'combat' && attackEvent.event.type === 'attack' ? attackEvent.event.damage : null).toBe(
+      51,
+    );
+  });
+
+  it('scales an equipped items modifier by forge level', () => {
+    const weakHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 1000, attack: 0, attackIntervalMs: 500 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(weakHero, 2, makeMetaBonuses({ forgeLevel: 100 }));
+    stateOf(manager).equipped.weapon = { defId: 'knights_blade', rarity: 'common' };
+    rebuildEngine(manager);
+
+    const events = manager.tick(500);
+
+    const attackEvent = events.find((e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'hero');
+    // knights_blade flatDamageBonus=4 at common (x1) rarity; forgeLevel 100 => x(1 + 100*0.01) = x2 => 8
+    expect(attackEvent && attackEvent.type === 'combat' && attackEvent.event.type === 'attack' ? attackEvent.event.damage : null).toBe(8);
+  });
+
+  it("scales a companion's attack by its meta upgrade rank", () => {
+    const weakHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 1000, attack: 0, attackIntervalMs: 999_999 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(weakHero, 3, makeMetaBonuses({ companionUpgrades: { roguish_blade: 5 } }));
+    stateOf(manager).companions = [{ id: 'roguish_blade', hp: 30 }];
+    rebuildEngine(manager);
+
+    const events = manager.tick(1000);
+
+    const allyAttack = events.find((e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'roguish_blade');
+    // roguish_blade base attack 5, rank 5 * 0.08/rank = +40% => round(5 * 1.4) = 7
+    expect(allyAttack && allyAttack.type === 'combat' && allyAttack.event.type === 'attack' ? allyAttack.event.damage : null).toBe(7);
   });
 });

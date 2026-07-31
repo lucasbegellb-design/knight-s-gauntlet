@@ -15,6 +15,7 @@ function makeContext(overrides: Partial<LootContext> = {}): LootContext {
     ownedPassiveSpellIds: new Map(),
     waveNumber: 1,
     goldMultiplier: 0,
+    luckBonus: 0,
     ...overrides,
   };
 }
@@ -116,5 +117,21 @@ describe('generateLootOptions', () => {
         }
       }
     }
+  });
+
+  it('a positive luckBonus shifts rarity odds toward rarer tiers over many rolls', () => {
+    const noLuck = new Rng(23);
+    const withLuck = new Rng(23);
+    const countRareOrBetter = (rng: Rng, luckBonus: number) => {
+      let count = 0;
+      for (let i = 0; i < 3000; i++) {
+        if (pickRarity(rng, luckBonus) !== 'common') count++;
+      }
+      return count;
+    };
+
+    const baseline = countRareOrBetter(noLuck, 0);
+    const boosted = countRareOrBetter(withLuck, 0.1);
+    expect(boosted).toBeGreaterThan(baseline);
   });
 });

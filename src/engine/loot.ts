@@ -25,6 +25,8 @@ export interface LootContext {
   ownedPassiveSpellIds: Map<string, number>;
   waveNumber: number;
   goldMultiplier: number;
+  /** Permanent meta-progression bonus (from talents) shifting rarity odds away from common, toward rarer tiers. */
+  luckBonus: number;
 }
 
 const LOOT_OPTIONS_PER_OFFERING = 3;
@@ -36,11 +38,31 @@ const CATEGORY_WEIGHTS: { kind: 'relic' | 'equipment' | 'companion' | 'spell' | 
   { kind: 'gold', weight: 10 },
 ];
 
-export function pickRarity(rng: Rng): Rarity {
+const MIN_COMMON_WEIGHT = 5;
+
+/**
+ * Rolls a rarity from the drop-weight table. `luckBonus` (a 0-1 fraction,
+ * e.g. from Fortune's Favor talent ranks) shifts weight away from common
+ * and toward rare+ tiers proportionally to their base share, floored so
+ * common never drops below MIN_COMMON_WEIGHT.
+ */
+export function pickRarity(rng: Rng, luckBonus = 0): Rarity {
+  const shift = Math.max(0, Math.min(RARITY_DROP_WEIGHTS.common - MIN_COMMON_WEIGHT, luckBonus * 100));
+  const nonCommonBase = 100 - RARITY_DROP_WEIGHTS.common;
+  const weights: Record<Rarity, number> = { ...RARITY_DROP_WEIGHTS };
+
+  if (shift > 0 && nonCommonBase > 0) {
+    weights.common -= shift;
+    for (const rarity of RARITY_ORDER) {
+      if (rarity === 'common') continue;
+      weights[rarity] += shift * (RARITY_DROP_WEIGHTS[rarity] / nonCommonBase);
+    }
+  }
+
   const roll = rng.next() * 100;
   let cumulative = 0;
   for (const rarity of RARITY_ORDER) {
-    cumulative += RARITY_DROP_WEIGHTS[rarity];
+    cumulative += weights[rarity];
     if (roll < cumulative) return rarity;
   }
   return RARITY_ORDER[RARITY_ORDER.length - 1] ?? 'common';
@@ -56,20 +78,20 @@ function pickWeighted<T extends { weight: number }>(rng: Rng, entries: T[]): T {
   return entries[entries.length - 1] as T;
 }
 
-function pickFromRarityPool<T extends { rarity: Rarity }>(rng: Rng, candidates: T[]): T | undefined {
+function pickFromRarityPool<T extends { rarity: Rarity }>(rng: Rng, candidates: T[], luckBonus: number): T | undefined {
   if (candidates.length === 0) return undefined;
-  const preferredRarity = pickRarity(rng);
+  const preferredRarity = pickRarity(rng, luckBonus);
   let pool = candidates.filter((c) => c.rarity === preferredRarity);
   if (pool.length === 0) pool = candidates;
   const index = Math.floor(rng.next() * pool.length);
   return pool[Math.min(index, pool.length - 1)];
 }
 
-function pickRelicOption(rng: Rng, ownedRelicIds: Map<string, number>, excludeIds: Set<string>): RelicDefinition | undefined {
+function pickRelicOption(rng: Rng, context: LootContext, excludeIds: Set<string>): RelicDefinition | undefined {
   const candidates = allRelics.filter(
-    (relic) => !excludeIds.has(relic.id) && (relic.stacking === 'stackable' || !ownedRelicIds.has(relic.id)),
+    (relic) => !excludeIds.has(relic.id) && (relic.stacking === 'stackable' || !context.ownedRelicIds.has(relic.id)),
   );
-  return pickFromRarityPool(rng, candidates);
+  return pickFromRarityPool(rng, candidates, context.luckBonus);
 }
 
 function pickEquipmentOption(rng: Rng, excludeIds: Set<string>): EquipmentDefinition | undefined {
@@ -83,7 +105,7 @@ function pickEquipmentOption(rng: Rng, excludeIds: Set<string>): EquipmentDefini
 function pickCompanionOption(rng: Rng, context: LootContext, excludeIds: Set<string>): CompanionDefinition | undefined {
   if (context.companionRosterFull) return undefined;
   const candidates = allCompanions.filter((c) => !context.ownedCompanionIds.has(c.id) && !excludeIds.has(c.id));
-  return pickFromRarityPool(rng, candidates);
+  return pickFromRarityPool(rng, candidates, context.luckBonus);
 }
 
 function pickSpellOption(rng: Rng, context: LootContext, excludeIds: Set<string>): SpellDefinition | undefined {
@@ -93,7 +115,7 @@ function pickSpellOption(rng: Rng, context: LootContext, excludeIds: Set<string>
   const passiveCandidates = allPassiveSpells.filter(
     (s) => !excludeIds.has(s.id) && (s.stacking === 'stackable' || !context.ownedPassiveSpellIds.has(s.id)),
   );
-  return pickFromRarityPool(rng, [...activeCandidates, ...passiveCandidates]);
+  return pickFromRarityPool(rng, [...activeCandidates, ...passiveCandidates], context.luckBonus);
 }
 
 function makeGoldOption(rng: Rng, waveNumber: number, goldMultiplier: number): LootOption {
@@ -114,7 +136,7 @@ export function generateLootOptions(rng: Rng, context: LootContext): LootOption[
     const category = pickWeighted(rng, CATEGORY_WEIGHTS).kind;
 
     if (category === 'relic') {
-      const relic = pickRelicOption(rng, context.ownedRelicIds, usedRelicIds);
+      const relic = pickRelicOption(rng, context, usedRelicIds);
       if (relic) {
         usedRelicIds.add(relic.id);
         options.push({ kind: 'relic', rarity: relic.rarity, relic });
@@ -126,7 +148,7 @@ export function generateLootOptions(rng: Rng, context: LootContext): LootOption[
       const equipment = pickEquipmentOption(rng, usedEquipmentIds);
       if (equipment) {
         usedEquipmentIds.add(equipment.id);
-        options.push({ kind: 'equipment', rarity: pickRarity(rng), equipment });
+        options.push({ kind: 'equipment', rarity: pickRarity(rng, context.luckBonus), equipment });
         continue;
       }
     }

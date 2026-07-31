@@ -22,6 +22,30 @@ const PHOENIX_HEART_ID = 'phoenix_heart';
 const PHOENIX_REVIVE_HP_FRACTION = 0.5;
 export const MAX_ACTIVE_COMPANIONS = 3;
 export const MAX_ACTIVE_SPELLS = 2;
+/** Permanent equipment power boost per Forge level (meta-progression). */
+const FORGE_BONUS_PER_LEVEL = 0.01;
+/** Permanent stat boost per companion upgrade rank (meta-progression). */
+const COMPANION_RANK_BONUS_PER_LEVEL = 0.08;
+
+/**
+ * Permanent meta-progression bonuses carried into a run from the HUB
+ * (talents, forge level, companion upgrade ranks, loot luck). All plain
+ * data, computed by the caller (see `src/engine/talents.ts`) — WaveManager
+ * stays framework-free and fully testable without touching the meta store.
+ */
+export interface MetaBonuses {
+  talentModifiers: RelicModifier[];
+  lootLuckBonus: number;
+  forgeLevel: number;
+  companionUpgrades: Record<string, number>;
+}
+
+export const DEFAULT_META_BONUSES: MetaBonuses = {
+  talentModifiers: [],
+  lootLuckBonus: 0,
+  forgeLevel: 0,
+  companionUpgrades: {},
+};
 
 export interface OwnedRelic {
   id: string;
@@ -101,6 +125,7 @@ function buildCombatant(id: string, name: string, hp: number, maxHp: number, att
 export class WaveManager {
   private readonly heroDef: HeroDefinition;
   private readonly rng: Rng;
+  private readonly metaBonuses: MetaBonuses;
   private seed: number;
   private state: RunState;
   private engine: CombatEngine;
@@ -109,10 +134,11 @@ export class WaveManager {
   /** Companion HP carried the same way, keyed by companion id. */
   private pendingCompanionHp = new Map<string, number>();
 
-  constructor(heroDef: HeroDefinition, seed = 1) {
+  constructor(heroDef: HeroDefinition, seed = 1, metaBonuses: MetaBonuses = DEFAULT_META_BONUSES) {
     this.heroDef = heroDef;
     this.rng = new Rng(seed);
     this.seed = seed;
+    this.metaBonuses = metaBonuses;
     this.state = {
       waveNumber: 0,
       heroProgress: { level: 1, xp: 0 },
@@ -209,6 +235,7 @@ export class WaveManager {
       ownedPassiveSpellIds: this.ownedIdCountMap(this.state.passiveSpells),
       waveNumber: clearedWave + 1,
       goldMultiplier: modifiers.goldMultiplierSum,
+      luckBonus: this.metaBonuses.lootLuckBonus,
     };
     this.state.lootOptions = generateLootOptions(this.rng, context);
     events.push({ type: 'lootOffered', options: this.state.lootOptions });
@@ -303,9 +330,12 @@ export class WaveManager {
       .filter((item): item is EquippedItem => item !== null)
       .map((item) => {
         const def = equipmentRegistry.get(item.defId);
-        const scaledValue = def.modifier.value * RARITY_POWER_MULTIPLIER[item.rarity];
+        const scaledValue =
+          def.modifier.value * RARITY_POWER_MULTIPLIER[item.rarity] * (1 + this.metaBonuses.forgeLevel * FORGE_BONUS_PER_LEVEL);
         return { modifiers: [{ kind: def.modifier.kind, value: scaledValue }], count: 1 };
       });
+
+    const talentSource: ModifierSource = { modifiers: this.metaBonuses.talentModifiers, count: 1 };
 
     const passiveSpellSources: ModifierSource[] = this.state.passiveSpells.map((owned) => {
       const def = spellRegistry.get(owned.id);
@@ -319,7 +349,7 @@ export class WaveManager {
       .filter((def) => def.role === 'support' && def.auraModifier)
       .map((def) => ({ modifiers: [def.auraModifier as RelicModifier], count: 1 }));
 
-    return aggregateModifiers([...relicSources, ...equipmentSources, ...passiveSpellSources, ...companionAuraSources]);
+    return aggregateModifiers([...relicSources, ...equipmentSources, ...passiveSpellSources, ...companionAuraSources, talentSource]);
   }
 
   /** Builds this wave's AllyUnit/SpellCaster arrays from the owned roster, applying wave-clear healing per companion. */
@@ -339,13 +369,17 @@ export class WaveManager {
       owned.hp = finalHp;
       if (finalHp <= 0) continue;
 
-      const combatant = buildCombatant(def.id, def.name, finalHp, def.maxHp, def.attack, def.attackIntervalMs);
+      // Upgrade ranks boost output (attack/healing), not HP — keeps hp bookkeeping in one consistent scale
+      // across waves (maxHp never changes for a companion, unlike the hero's level-driven growth).
+      const rankBonus = 1 + (this.metaBonuses.companionUpgrades[owned.id] ?? 0) * COMPANION_RANK_BONUS_PER_LEVEL;
+      const upgradedAttack = Math.round(def.attack * rankBonus);
+      const combatant = buildCombatant(def.id, def.name, finalHp, def.maxHp, upgradedAttack, def.attackIntervalMs);
       allies.push({
         combatant,
         role: def.role,
         actsIndependently: def.role !== 'support',
         tauntWeight: def.role === 'tank' ? 4 : 1,
-        healAmount: def.healAmount ?? 0,
+        healAmount: Math.round((def.healAmount ?? 0) * rankBonus),
         doubleStrikeChance: def.doubleStrikeChance ?? 0,
       });
     }
