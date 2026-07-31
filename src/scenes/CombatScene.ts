@@ -1,9 +1,13 @@
 import Phaser from 'phaser';
 import { WaveManager, type WaveEvent } from '../engine/WaveManager';
 import { xpForNextLevel } from '../engine/heroProgression';
+import type { CombatEvent } from '../engine/types';
 import { knight } from '../data/hero';
 import type { MonsterTier } from '../data/monster.types';
+import { relicRegistry } from '../data/relics';
+import { equipmentRegistry } from '../data/equipment';
 import { useRunStore } from '../store/runStore';
+import type { EquippedDisplay } from '../store/runStore';
 
 const HERO_COLOR = 0x3b82c4;
 const HERO_SIZE = { width: 80, height: 120 };
@@ -32,6 +36,7 @@ export class CombatScene extends Phaser.Scene {
   private heroView!: UnitView;
   private monsterView!: UnitView;
   private lastRestartToken = 0;
+  private lastLootChoiceToken = 0;
 
   constructor() {
     super('CombatScene');
@@ -39,6 +44,7 @@ export class CombatScene extends Phaser.Scene {
 
   create(): void {
     this.lastRestartToken = useRunStore.getState().restartToken;
+    this.lastLootChoiceToken = useRunStore.getState().lootChoiceRequest?.token ?? 0;
     this.startNewRun();
   }
 
@@ -47,7 +53,17 @@ export class CombatScene extends Phaser.Scene {
 
     if (store.restartToken !== this.lastRestartToken) {
       this.lastRestartToken = store.restartToken;
+      this.lastLootChoiceToken = store.lootChoiceRequest?.token ?? 0;
       this.startNewRun();
+      return;
+    }
+
+    if (store.lootChoiceRequest && store.lootChoiceRequest.token !== this.lastLootChoiceToken) {
+      this.lastLootChoiceToken = store.lootChoiceRequest.token;
+      const events = this.waveManager.chooseLoot(store.lootChoiceRequest.index);
+      this.handleEvents(events);
+      this.syncUnitViews();
+      this.pushSnapshotToStore();
       return;
     }
 
@@ -77,17 +93,43 @@ export class CombatScene extends Phaser.Scene {
 
   private handleEvents(events: WaveEvent[]): void {
     for (const event of events) {
-      if (event.type === 'combat' && event.event.type === 'attack') {
-        const target = event.event.targetId === this.waveManager.getCombatState().hero.id ? this.heroView : this.monsterView;
-        this.flash(target);
+      if (event.type === 'combat') {
+        this.handleCombatEvent(event.event);
       }
       if (event.type === 'waveStarted') {
         const appearance = MONSTER_APPEARANCE[event.monster.tier];
         this.resizeMonsterView(appearance);
       }
       if (event.type === 'levelUp') {
-        this.showLevelUpToast();
+        this.showFloatingText(HERO_X, UNIT_Y - 130, 'LEVEL UP!', '#f1c40f');
       }
+      if (event.type === 'revived') {
+        this.showFloatingText(HERO_X, UNIT_Y - 130, 'REVIVED!', '#ff3b6b');
+      }
+    }
+  }
+
+  private handleCombatEvent(event: CombatEvent): void {
+    const heroId = this.waveManager.getCombatState().hero.id;
+
+    if (event.type === 'attack') {
+      const target = event.targetId === heroId ? this.heroView : this.monsterView;
+      this.flash(target);
+    }
+    if (event.type === 'critHit') {
+      this.showFloatingText(MONSTER_X, UNIT_Y - 130, 'CRIT!', '#ffd23f');
+    }
+    if (event.type === 'statusProc' && event.kind === 'burn') {
+      this.showFloatingText(MONSTER_X, UNIT_Y - 145, `-${event.damage} burn`, '#e67e22');
+    }
+    if (event.type === 'lifesteal') {
+      this.showFloatingText(HERO_X, UNIT_Y - 145, `+${event.amount}`, '#2ecc71');
+    }
+    if (event.type === 'execute') {
+      this.showFloatingText(MONSTER_X, UNIT_Y - 130, 'EXECUTED', '#e74c3c');
+    }
+    if (event.type === 'reflect') {
+      this.showFloatingText(MONSTER_X, UNIT_Y - 160, `-${event.damage} reflect`, '#9b59b6');
     }
   }
 
@@ -101,6 +143,23 @@ export class CombatScene extends Phaser.Scene {
     const combat = this.waveManager.getCombatState();
     const run = this.waveManager.getRunState();
 
+    const ownedRelics = run.ownedRelics.map((owned) => {
+      const def = relicRegistry.get(owned.id);
+      return { id: owned.id, name: def.name, rarity: def.rarity, count: owned.count };
+    });
+
+    const equipped: EquippedDisplay = {
+      weapon: run.equipped.weapon
+        ? { name: equipmentRegistry.get(run.equipped.weapon.defId).name, rarity: run.equipped.weapon.rarity }
+        : null,
+      armor: run.equipped.armor
+        ? { name: equipmentRegistry.get(run.equipped.armor.defId).name, rarity: run.equipped.armor.rarity }
+        : null,
+      accessory: run.equipped.accessory
+        ? { name: equipmentRegistry.get(run.equipped.accessory.defId).name, rarity: run.equipped.accessory.rarity }
+        : null,
+    };
+
     useRunStore.getState().setSnapshot({
       waveNumber: run.waveNumber,
       monsterName: combat.monster.name,
@@ -113,6 +172,11 @@ export class CombatScene extends Phaser.Scene {
       heroHp: combat.hero.hp,
       heroMaxHp: combat.hero.maxHp,
       isGameOver: run.isGameOver,
+      gold: run.gold,
+      ownedRelics,
+      equipped,
+      isChoosingLoot: run.isChoosingLoot,
+      lootOptions: run.lootOptions,
     });
   }
 
@@ -153,15 +217,13 @@ export class CombatScene extends Phaser.Scene {
     this.tweens.add({ targets: view.body, alpha: { from: 0.4, to: 1 }, duration: 150 });
   }
 
-  private showLevelUpToast(): void {
-    const toast = this.add
-      .text(HERO_X, UNIT_Y - 130, 'LEVEL UP!', { fontSize: '18px', color: '#f1c40f', fontStyle: 'bold' })
-      .setOrigin(0.5);
+  private showFloatingText(x: number, y: number, text: string, color: string): void {
+    const toast = this.add.text(x, y, text, { fontSize: '16px', color, fontStyle: 'bold' }).setOrigin(0.5);
     this.tweens.add({
       targets: toast,
-      y: toast.y - 40,
+      y: y - 30,
       alpha: 0,
-      duration: 900,
+      duration: 800,
       onComplete: () => toast.destroy(),
     });
   }

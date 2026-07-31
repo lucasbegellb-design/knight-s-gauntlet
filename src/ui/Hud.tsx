@@ -1,6 +1,8 @@
 import { useRunStore, type CombatSpeed } from '../store/runStore';
+import { RARITY_COLOR } from '../data/rarity';
 
 const SPEEDS: CombatSpeed[] = [1, 2, 4];
+const EQUIPMENT_SLOTS = ['weapon', 'armor', 'accessory'] as const;
 
 const TIER_LABEL: Record<string, string> = {
   normal: '',
@@ -69,8 +71,34 @@ export function Hud() {
             x{speed}
           </button>
         ))}
+        <span className="gold-display">{state.gold} gold</span>
       </div>
 
+      <div className="hud-row">
+        {EQUIPMENT_SLOTS.map((slot) => {
+          const item = state.equipped[slot];
+          return (
+            <div
+              key={slot}
+              className="equip-slot"
+              style={item ? { borderColor: RARITY_COLOR[item.rarity], color: RARITY_COLOR[item.rarity] } : undefined}
+            >
+              {item ? item.name : slot}
+            </div>
+          );
+        })}
+      </div>
+
+      {state.ownedRelics.length > 0 && (
+        <div className="hud-row relic-tray">
+          {state.ownedRelics.map((relic) => (
+            <div key={relic.id} className="relic-chip" style={{ borderColor: RARITY_COLOR[relic.rarity], color: RARITY_COLOR[relic.rarity] }}>
+              {relic.name}
+              {relic.count > 1 ? ` x${relic.count}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

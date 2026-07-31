@@ -1,7 +1,19 @@
 import { create } from 'zustand';
 import type { MonsterTier } from '../data/monster.types';
+import type { EquipmentSlot } from '../data/equipment.types';
+import type { Rarity } from '../data/rarity';
+import type { LootOption } from '../engine/loot';
 
 export type CombatSpeed = 1 | 2 | 4;
+
+export interface OwnedRelicDisplay {
+  id: string;
+  name: string;
+  rarity: Rarity;
+  count: number;
+}
+
+export type EquippedDisplay = Record<EquipmentSlot, { name: string; rarity: Rarity } | null>;
 
 export interface RunSnapshot {
   waveNumber: number;
@@ -15,15 +27,23 @@ export interface RunSnapshot {
   heroHp: number;
   heroMaxHp: number;
   isGameOver: boolean;
+  gold: number;
+  ownedRelics: OwnedRelicDisplay[];
+  equipped: EquippedDisplay;
+  isChoosingLoot: boolean;
+  lootOptions: LootOption[];
 }
 
 interface RunStore extends RunSnapshot {
   speed: CombatSpeed;
   /** Bumped whenever the player asks for a fresh run; the scene watches this to reset itself. */
   restartToken: number;
+  /** Bumped whenever the player picks a loot option; the scene watches this to apply the pick. */
+  lootChoiceRequest: { token: number; index: number } | null;
   setSnapshot: (snapshot: RunSnapshot) => void;
   setSpeed: (speed: CombatSpeed) => void;
   requestRestart: () => void;
+  requestLootChoice: (index: number) => void;
 }
 
 const initialSnapshot: RunSnapshot = {
@@ -38,13 +58,21 @@ const initialSnapshot: RunSnapshot = {
   heroHp: 0,
   heroMaxHp: 0,
   isGameOver: false,
+  gold: 0,
+  ownedRelics: [],
+  equipped: { weapon: null, armor: null, accessory: null },
+  isChoosingLoot: false,
+  lootOptions: [],
 };
 
 export const useRunStore = create<RunStore>((set) => ({
   ...initialSnapshot,
   speed: 1,
   restartToken: 0,
+  lootChoiceRequest: null,
   setSnapshot: (snapshot) => set(snapshot),
   setSpeed: (speed) => set({ speed }),
   requestRestart: () => set((state) => ({ restartToken: state.restartToken + 1 })),
+  requestLootChoice: (index) =>
+    set((state) => ({ lootChoiceRequest: { token: (state.lootChoiceRequest?.token ?? 0) + 1, index } })),
 }));

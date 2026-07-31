@@ -1,5 +1,6 @@
 import { PhaserGame } from './ui/PhaserGame';
 import { GameOverOverlay, Hud } from './ui/Hud';
+import { LootPopup } from './ui/LootPopup';
 
 function App() {
   return (
@@ -9,6 +10,7 @@ function App() {
       <div className="game-area">
         <PhaserGame />
         <GameOverOverlay />
+        <LootPopup />
       </div>
     </main>
   );
