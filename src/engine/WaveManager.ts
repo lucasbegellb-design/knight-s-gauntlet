@@ -2,6 +2,7 @@ import { CombatEngine } from './CombatEngine';
 import { Rng } from './rng';
 import { applyXpGain, statsForLevel, type HeroProgress } from './heroProgression';
 import { monsterPoolForWave, scaledMonsterStats, tierForWave, zoneForWave } from './waveScaling';
+import { rollBrokenParts } from './brokenParts';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
 import { generateLootOptions, type LootContext, type LootOption } from './loot';
 import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from './types';
@@ -40,6 +41,8 @@ export interface MetaBonuses {
   companionUpgrades: Record<string, number>;
   /** Innate modifiers from the player's chosen class (see src/data/classes), active for the whole run. */
   classModifiers: RelicModifier[];
+  /** Passive modifiers from the meta-persistent Forge Weapon's current level (see src/data/forgeWeapon.ts). */
+  forgeWeaponModifiers: RelicModifier[];
 }
 
 export const DEFAULT_META_BONUSES: MetaBonuses = {
@@ -48,6 +51,7 @@ export const DEFAULT_META_BONUSES: MetaBonuses = {
   forgeLevel: 0,
   companionUpgrades: {},
   classModifiers: [],
+  forgeWeaponModifiers: [],
 };
 
 export interface OwnedRelic {
@@ -82,6 +86,7 @@ export interface RunState {
   zoneId: string;
   zoneName: string;
   gold: number;
+  brokenParts: number;
   ownedRelics: OwnedRelic[];
   equipped: EquippedItems;
   companions: OwnedCompanion[];
@@ -101,6 +106,7 @@ export type WaveEvent =
       zone: { id: string; name: string; isNewZone: boolean };
     }
   | { type: 'waveCleared'; waveNumber: number; xpGained: number }
+  | { type: 'brokenPartsDropped'; amount: number }
   | { type: 'levelUp'; newLevel: number }
   | { type: 'lootOffered'; options: LootOption[] }
   | { type: 'lootChosen'; option: LootOption }
@@ -131,6 +137,8 @@ function buildCombatant(id: string, name: string, hp: number, maxHp: number, att
 export class WaveManager {
   private readonly heroDef: HeroDefinition;
   private readonly rng: Rng;
+  /** Separate RNG stream for Broken Parts drops so adding/removing that roll never shifts monster-pick or loot-roll sequences elsewhere. */
+  private readonly brokenPartsRng: Rng;
   private readonly metaBonuses: MetaBonuses;
   private seed: number;
   private state: RunState;
@@ -148,6 +156,7 @@ export class WaveManager {
   ) {
     this.heroDef = heroDef;
     this.rng = new Rng(seed);
+    this.brokenPartsRng = new Rng(seed + 90210);
     this.seed = seed;
     this.metaBonuses = metaBonuses;
     this.state = {
@@ -159,6 +168,7 @@ export class WaveManager {
       zoneId: '',
       zoneName: '',
       gold: 0,
+      brokenParts: 0,
       ownedRelics: [],
       equipped: { weapon: null, armor: null, accessory: null, ...startingEquipment },
       companions: [],
@@ -235,6 +245,12 @@ export class WaveManager {
     this.state.heroProgress = progress;
     if (levelsGained > 0) {
       events.push({ type: 'levelUp', newLevel: progress.level });
+    }
+
+    const brokenPartsGained = rollBrokenParts(this.state.monsterTier, this.brokenPartsRng);
+    if (brokenPartsGained > 0) {
+      this.state.brokenParts += brokenPartsGained;
+      events.push({ type: 'brokenPartsDropped', amount: brokenPartsGained });
     }
 
     this.pendingHeroHp = this.engine.getState().hero.hp;
@@ -352,6 +368,7 @@ export class WaveManager {
 
     const talentSource: ModifierSource = { modifiers: this.metaBonuses.talentModifiers, count: 1 };
     const classSource: ModifierSource = { modifiers: this.metaBonuses.classModifiers, count: 1 };
+    const forgeWeaponSource: ModifierSource = { modifiers: this.metaBonuses.forgeWeaponModifiers, count: 1 };
 
     const passiveSpellSources: ModifierSource[] = this.state.passiveSpells.map((owned) => {
       const def = spellRegistry.get(owned.id);
@@ -372,6 +389,7 @@ export class WaveManager {
       ...companionAuraSources,
       talentSource,
       classSource,
+      forgeWeaponSource,
     ]);
   }
 

@@ -5,6 +5,7 @@ import { costForRank } from '../engine/talents';
 import { classRegistry } from '../data/classes';
 import { Rng } from '../engine/rng';
 import type { Rarity } from '../data/rarity';
+import { forgeWeaponUpgradeCost, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWeapon';
 
 const STORAGE_KEY = 'knights-gauntlet-meta-v1';
 const MAX_FORGE_LEVEL = 20;
@@ -19,6 +20,9 @@ interface PersistedMeta {
   talentRanks: Record<string, number>;
   companionUpgrades: Record<string, number>;
   forgeLevel: number;
+  /** Salvage material for the Forge Weapon, dropped by monsters during runs (see src/engine/brokenParts.ts). */
+  brokenParts: number;
+  forgeWeaponLevel: number;
   discoveredRelicIds: string[];
   discoveredSpellIds: string[];
   discoveredEquipmentIds: string[];
@@ -39,6 +43,8 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   talentRanks: {},
   companionUpgrades: {},
   forgeLevel: 0,
+  brokenParts: 0,
+  forgeWeaponLevel: 0,
   discoveredRelicIds: [],
   discoveredSpellIds: [],
   discoveredEquipmentIds: [],
@@ -78,9 +84,11 @@ interface MetaStore extends PersistedMeta {
   setScreen: (screen: Screen) => void;
   chooseClass: (classId: string) => void;
   depositCurrency: (amount: number) => void;
+  depositBrokenParts: (amount: number) => void;
   purchaseTalentRank: (talentId: string) => void;
   upgradeCompanion: (companionId: string) => void;
   upgradeForge: () => void;
+  upgradeForgeWeapon: () => void;
   discover: (kind: DiscoveryKind, id: string) => void;
 }
 
@@ -90,6 +98,8 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     talentRanks: state.talentRanks,
     companionUpgrades: state.companionUpgrades,
     forgeLevel: state.forgeLevel,
+    brokenParts: state.brokenParts,
+    forgeWeaponLevel: state.forgeWeaponLevel,
     discoveredRelicIds: state.discoveredRelicIds,
     discoveredSpellIds: state.discoveredSpellIds,
     discoveredEquipmentIds: state.discoveredEquipmentIds,
@@ -122,6 +132,7 @@ export const useMetaStore = create<MetaStore>((set) => ({
       return { selectedClassId: classId, startingWeapon, screen: 'run' };
     }),
   depositCurrency: (amount) => set((state) => ({ currency: state.currency + Math.max(0, amount) })),
+  depositBrokenParts: (amount) => set((state) => ({ brokenParts: state.brokenParts + Math.max(0, amount) })),
   purchaseTalentRank: (talentId) =>
     set((state) => {
       const def = talentRegistry.tryGet(talentId);
@@ -150,6 +161,13 @@ export const useMetaStore = create<MetaStore>((set) => ({
       if (state.currency < cost) return state;
       return { currency: state.currency - cost, forgeLevel: state.forgeLevel + 1 };
     }),
+  upgradeForgeWeapon: () =>
+    set((state) => {
+      if (state.forgeWeaponLevel >= MAX_FORGE_WEAPON_LEVEL) return state;
+      const cost = forgeWeaponUpgradeCost(state.forgeWeaponLevel);
+      if (state.brokenParts < cost) return state;
+      return { brokenParts: state.brokenParts - cost, forgeWeaponLevel: state.forgeWeaponLevel + 1 };
+    }),
   discover: (kind, id) =>
     set((state) => {
       const key = DISCOVERY_KEY[kind];
@@ -159,7 +177,7 @@ export const useMetaStore = create<MetaStore>((set) => ({
     }),
 }));
 
-export { MAX_FORGE_LEVEL, MAX_COMPANION_UPGRADE_RANK };
+export { MAX_FORGE_LEVEL, MAX_COMPANION_UPGRADE_RANK, MAX_FORGE_WEAPON_LEVEL };
 
 // Hydrate from IndexedDB once, then persist on every subsequent change.
 void (async () => {

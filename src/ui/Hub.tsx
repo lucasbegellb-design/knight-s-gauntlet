@@ -10,6 +10,18 @@ import { allEquipment } from '../data/equipment';
 import { allMonsters } from '../data/monsters';
 import { RARITY_COLOR, RARITY_LABEL } from '../data/rarity';
 import { GeneratedPortrait } from './RarityIcon';
+import { forgeWeapon, forgeWeaponUpgradeCost, resolveForgeWeaponModifiers, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWeapon';
+
+const MODIFIER_LABEL: Record<string, string> = {
+  damageMultiplier: 'damage',
+  critChance: 'crit chance',
+};
+
+function describeForgeWeaponModifiers(level: number): string {
+  const modifiers = resolveForgeWeaponModifiers(level);
+  if (modifiers.length === 0) return 'Unforged — no bonuses yet.';
+  return modifiers.map((m) => `+${(m.value * 100).toFixed(1)}% ${MODIFIER_LABEL[m.kind] ?? m.kind}`).join(' · ');
+}
 
 const BRANCH_LABEL: Record<TalentBranch, string> = {
   offense: 'Offense',
@@ -21,6 +33,7 @@ const BRANCH_LABEL: Record<TalentBranch, string> = {
 const TABS = ['talents', 'forge', 'companions', 'grimoire'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = { talents: 'Talents', forge: 'Forge', companions: 'Companions', grimoire: 'Grimoire' };
+const TAB_ICON: Record<Tab, string> = { talents: '✨', forge: '🔨', companions: '🤝', grimoire: '📖' };
 
 function TalentsTab() {
   const currency = useMetaStore((s) => s.currency);
@@ -75,19 +88,58 @@ function ForgeTab() {
   const maxed = forgeLevel >= MAX_FORGE_LEVEL;
   const cost = forgeUpgradeCost(forgeLevel);
 
+  const brokenParts = useMetaStore((s) => s.brokenParts);
+  const forgeWeaponLevel = useMetaStore((s) => s.forgeWeaponLevel);
+  const upgradeForgeWeapon = useMetaStore((s) => s.upgradeForgeWeapon);
+  const weaponMaxed = forgeWeaponLevel >= MAX_FORGE_WEAPON_LEVEL;
+  const weaponCost = forgeWeaponUpgradeCost(forgeWeaponLevel);
+
   return (
-    <div className="hub-card">
-      <div className="hub-card-title">Forge</div>
-      <div className="hub-row-item">
-        <div>
-          <div className="hub-item-name">
-            Forge Level <span className="hub-item-rank">{forgeLevel}</span>
+    <div className="hub-panel-grid">
+      <div className="hub-card">
+        <div className="hub-card-title">Equipment Forge</div>
+        <div className="hub-row-item">
+          <div>
+            <div className="hub-item-name">
+              Forge Level <span className="hub-item-rank">{forgeLevel}</span>
+            </div>
+            <div className="hub-item-description">All equipment found in future runs is permanently stronger (+1% power per level).</div>
           </div>
-          <div className="hub-item-description">All equipment found in future runs is permanently stronger (+1% power per level).</div>
+          <button type="button" className="hub-buy-button" disabled={maxed || currency < cost} onClick={() => upgradeForge()}>
+            {maxed ? 'Maxed' : `${cost}`}
+          </button>
         </div>
-        <button type="button" className="hub-buy-button" disabled={maxed || currency < cost} onClick={() => upgradeForge()}>
-          {maxed ? 'Maxed' : `${cost}`}
-        </button>
+      </div>
+
+      <div className="hub-card forge-weapon-card">
+        <div className="hub-card-title">{forgeWeapon.name}</div>
+        <div className="hub-item-description">{forgeWeapon.description}</div>
+
+        <div className="forge-weapon-level-row">
+          <div className="forge-weapon-level-badge">
+            Lv. {forgeWeaponLevel}
+            <span className="hub-item-rank">/{MAX_FORGE_WEAPON_LEVEL}</span>
+          </div>
+          <span className="forge-parts-display">⚙️ {brokenParts} broken parts</span>
+        </div>
+
+        <div className="hub-row-item">
+          <div>
+            <div className="hub-item-name">Current bonus</div>
+            <div className="hub-item-description">{describeForgeWeaponModifiers(forgeWeaponLevel)}</div>
+            {!weaponMaxed && (
+              <div className="hub-item-description forge-weapon-next">Next level: {describeForgeWeaponModifiers(forgeWeaponLevel + 1)}</div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="hub-buy-button"
+            disabled={weaponMaxed || brokenParts < weaponCost}
+            onClick={() => upgradeForgeWeapon()}
+          >
+            {weaponMaxed ? 'Maxed' : `${weaponCost} parts`}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -236,19 +288,19 @@ export function Hub() {
 
   return (
     <div className="hub">
-      <div className="hud-row">
-        <GeneratedPortrait category="hero" id="knight" size={44} />
+      <div className="hud-row hub-topbar">
+        <GeneratedPortrait category="hero" id="knight" size={48} />
         <h2 className="hub-title">Camp</h2>
-        <span className="gold-display">{currency} essence</span>
+        <span className="gold-display">🪙 {currency} essence</span>
         <button type="button" className="restart-button" onClick={() => setScreen('classSelect')}>
-          Start Run
+          Start Run →
         </button>
       </div>
 
-      <div className="hud-row">
+      <div className="hud-row hub-tab-row">
         {TABS.map((t) => (
           <button key={t} type="button" className={`speed-button${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-            {TAB_LABEL[t]}
+            <span className="tab-icon">{TAB_ICON[t]}</span> {TAB_LABEL[t]}
           </button>
         ))}
       </div>
