@@ -109,6 +109,21 @@ describe('CombatEngine with hero modifiers', () => {
     ]);
   });
 
+  it('resolves several stacked relic modifiers together as one real combo', () => {
+    // flatDamageBonus + damageMultiplier stack additively at the base-damage stage,
+    // then critChance/critDamageMultiplier multiply the result again — the
+    // "combo" behavior the relic system is designed around (see DESIGN_NOTES.md).
+    const mods = makeModifiers({ flatDamageBonusSum: 5, damageMultiplierSum: 0.5, critChanceSum: 1, critDamageMultiplierSum: 0.5 });
+    const engine = new CombatEngine(makeHero({ attack: 10 }), makeMonster({ maxHp: 1000, hp: 1000 }), 1, mods);
+
+    const events = engine.tick(1000);
+
+    // base: 10 * (1 + 0.5) + 5 = 20; guaranteed crit: 20 * (1.5 base + 0.5) = 40
+    const attackEvent = events.find((e) => e.type === 'attack');
+    expect(attackEvent).toMatchObject({ damage: 40 });
+    expect(events.some((e) => e.type === 'critHit')).toBe(true);
+  });
+
   it('always crits when critChance is 1, applying the crit multiplier and a critHit event', () => {
     const mods = makeModifiers({ critChanceSum: 1 });
     const engine = new CombatEngine(makeHero({ attack: 10 }), makeMonster({ maxHp: 100 }), 1, mods);

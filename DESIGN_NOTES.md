@@ -88,3 +88,32 @@ Running log of game-design and technical decisions made during development. Upda
 - **Monsters roughly doubled (7 → 16): 10 normal, 3 miniboss, 3 boss** (5 new normal, 2 new miniboss, 2 new boss). Since `WaveManager` already picks randomly within a tier's pool, this alone makes miniboss/boss waves feel less repetitive (previously always Orc Chieftain / Ancient Wyrm; now one of three) without touching `buildWaveEngine` at all.
 - **Equipment doubled (6 → 12, 2 new per slot)**, still one modifier each — the "true multi-affix rolls" enhancement noted as a Phase 6+ possibility in the Phase 3 notes was deliberately not pursued here either; this phase is breadth (more templates), not new depth per item.
 - **Verification for this phase leaned on the automated suite (typecheck/vitest/lint/build) plus a direct content-count check rather than a full Playwright visual pass** — appropriate for a phase that added zero new mechanics or UI surface; the loot/combat/HUB systems exercising this content were already visually verified in Phases 3-5.
+
+## Phase 7 — AI asset pipeline
+
+**Scope:** a real, working `scripts/asset-gen/generate.mjs` pipeline (AI Horde primary, Pollinations.ai fallback, per the brief) plus a priority manifest and an actual generated batch, integrated with a graceful-failure pattern so the game never depends on any of it. Session budget was tight for this pass, so scope leaned deliberately conservative — see decisions below.
+
+### Decisions
+
+- **The actual generation run used Pollinations only (`--skip-horde`), not AI Horde, despite both being implemented.** AI Horde is a shared community queue with unpredictable wait times; under a hard token/time budget, a quick connectivity check confirmed Pollinations responds in ~2s, so the real batch used it exclusively for speed and predictability. `generateViaAiHorde()` is fully implemented (submit + poll `generate/status` + fetch) and is the default path (`--skip-horde` opts out) for future runs with more time to spare.
+- **Found and fixed a real bug during the actual run**: the pacing delay was only applied after *successful* Pollinations calls, so a string of failures fired back-to-back and instantly tripped the anonymous rate limit (HTTP 429) for the entire first batch (13/13 failed). Fixed by (a) always pacing between requests regardless of outcome, and (b) adding retry-with-backoff specifically for 429s inside `generateViaPollinations`. This is exactly the kind of thing "génère you génère en masse puis relance les échecs" resumability was designed for — the failure log made re-running only the misses trivial.
+- **Result: 12 of 13 priority assets generated** (hero knight, 7 monsters including one boss, all 5 rarity icons; only `slime` still fails after two attempts). Not chased further to conserve budget — `node scripts/asset-gen/generate.mjs --only=slime` will pick it up whenever it's next run, resumable by design.
+- **Integration is deliberately narrow and low-risk: plain React `<img>` tags with an `onError` handler that hides the element, never touching Phaser.** `RarityIcon` (loot cards) and `GeneratedPortrait` (HUB header, Bestiary thumbnails) are the only consumers. The working, tested rectangle-based `CombatScene` rendering was **not** touched — swapping it for real sprites would need a materially riskier refactor (Rectangle vs. Image have different APIs for resize/tint used throughout `updateUnitView`/`resizeMonsterView`), which isn't worth risking under a tight budget when the combat visuals already work correctly. This is squarely inside the brief's own "never block gameplay on asset generation" principle — placeholders remain the rendering path for combat; generated art augments HUB/UI screens where it's free to add or fail silently.
+
+## Phase 8 — Polish (light pass)
+
+**Scope:** given remaining budget, a targeted pass rather than exhaustive polish — the highest-value cheap wins, plus an honest accounting of what's left for a future pass.
+
+### Done this phase
+- **Rarity-driven animation on legendary/mythic loot cards**: a pulsing glow for legendary, an animated rainbow hue-rotation border for mythic — directly matching the brief's "rouge/arc-en-ciel animé=Mythique" call-out, CSS-only.
+- **A `README.md` that actually describes the project** (was still the default Vite template through Phases 1-6).
+- **One explicit multi-modifier "combo" test** (`CombatEngine.test.ts`) that resolves `flatDamageBonus` + `damageMultiplier` + guaranteed crit + `critDamageMultiplier` together and asserts the exact compounded number — a concrete, checked example of the synergy math the whole relic system is built around, rather than only unit-testing each modifier in isolation.
+
+### Explicitly not done (honest scope-out, not an oversight)
+- **No deep balance/difficulty pass.** The wave-scaling curve was tuned once from real playtesting in Phase 2 (see that section) and never revisited at full 60-relic content scale. It's a reasonable baseline, not a tuned one — a real balance pass needs many playtests across relic/companion/spell combinations, which wasn't affordable here.
+- **No further gacha-premium chrome** (particle bursts on legendary+ pulls, portrait frame ornamentation, animated pull sequences) beyond the CSS glow above. The existing rarity color system (Phase 3) plus this pass's animations are a reasonable middle ground, not the full "AAA gacha" visual bar the brief describes.
+- **Combat-scene sprite integration remains deferred** (see Phase 7 above) — the biggest visible gap between current state and the brief's full art vision.
+
+## V1 status summary
+
+Phases 1-6 are feature-complete and thoroughly unit-tested (82 Vitest tests across engine/loot/talents modules, all passing; clean typecheck/lint/build throughout). Phase 7's pipeline is real and working with a 12/13 sample batch integrated. Phase 8 got a light, honest pass rather than the full polish sweep, prioritized by the remaining session budget. The natural next steps for a future session: finish the sprite-integration risk properly (with room to test it thoroughly), run a real multi-playtest balance pass, and generate the rest of the 60-monster/relic roster's art now that the pipeline is proven.
