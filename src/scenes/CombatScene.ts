@@ -1,134 +1,168 @@
 import Phaser from 'phaser';
-import { CombatEngine } from '../engine/CombatEngine';
-import type { Combatant } from '../engine/types';
-import { monsterRegistry } from '../data/monsters';
+import { WaveManager, type WaveEvent } from '../engine/WaveManager';
+import { xpForNextLevel } from '../engine/heroProgression';
+import { knight } from '../data/hero';
+import type { MonsterTier } from '../data/monster.types';
+import { useRunStore } from '../store/runStore';
 
 const HERO_COLOR = 0x3b82c4;
-const MONSTER_COLOR = 0xc0392b;
+const HERO_SIZE = { width: 80, height: 120 };
+
+const MONSTER_APPEARANCE: Record<MonsterTier, { color: number; width: number; height: number }> = {
+  normal: { color: 0xc0392b, width: 70, height: 100 },
+  miniboss: { color: 0xe67e22, width: 92, height: 130 },
+  boss: { color: 0x8e2de2, width: 114, height: 160 },
+};
+
 const HP_BAR_WIDTH = 160;
 const HP_BAR_HEIGHT = 14;
+const HERO_X = 220;
+const MONSTER_X = 580;
+const UNIT_Y = 260;
 
 interface UnitView {
-  combatant: Combatant;
-  bodyX: number;
-  bodyY: number;
-  color: number;
   body: Phaser.GameObjects.Rectangle;
   hpBarBg: Phaser.GameObjects.Rectangle;
   hpBarFill: Phaser.GameObjects.Rectangle;
   hpLabel: Phaser.GameObjects.Text;
 }
 
-function makeHero(): Combatant {
-  return {
-    id: 'hero',
-    name: 'Knight',
-    maxHp: 60,
-    hp: 60,
-    attack: 6,
-    attackIntervalMs: 900,
-    nextAttackAt: 900,
-  };
-}
-
-function makeMonsterCombatant(): Combatant {
-  const def = monsterRegistry.get('goblin_grunt');
-  return {
-    id: def.id,
-    name: def.name,
-    maxHp: def.maxHp,
-    hp: def.maxHp,
-    attack: def.attack,
-    attackIntervalMs: def.attackIntervalMs,
-    nextAttackAt: def.attackIntervalMs,
-  };
-}
-
 export class CombatScene extends Phaser.Scene {
-  private engine!: CombatEngine;
-  private hero!: UnitView;
-  private monster!: UnitView;
-  private endBanner?: Phaser.GameObjects.Text;
+  private waveManager!: WaveManager;
+  private heroView!: UnitView;
+  private monsterView!: UnitView;
+  private lastRestartToken = 0;
 
   constructor() {
     super('CombatScene');
   }
 
   create(): void {
-    this.engine = new CombatEngine(makeHero(), makeMonsterCombatant());
-
-    const state = this.engine.getState();
-    this.hero = this.createUnitView(state.hero, 220, 260, HERO_COLOR);
-    this.monster = this.createUnitView(state.monster, 580, 260, MONSTER_COLOR);
+    this.lastRestartToken = useRunStore.getState().restartToken;
+    this.startNewRun();
   }
 
   update(_time: number, delta: number): void {
-    const events = this.engine.tick(delta);
+    const store = useRunStore.getState();
 
+    if (store.restartToken !== this.lastRestartToken) {
+      this.lastRestartToken = store.restartToken;
+      this.startNewRun();
+      return;
+    }
+
+    const events = this.waveManager.tick(delta * store.speed);
+    this.handleEvents(events);
+    this.syncUnitViews();
+    this.pushSnapshotToStore();
+  }
+
+  private startNewRun(): void {
+    this.waveManager = new WaveManager(knight, Date.now());
+
+    const state = this.waveManager.getCombatState();
+    const runState = this.waveManager.getRunState();
+
+    if (this.heroView) this.destroyUnitView(this.heroView);
+    if (this.monsterView) this.destroyUnitView(this.monsterView);
+
+    this.heroView = this.createUnitView(HERO_X, HERO_SIZE.width, HERO_SIZE.height, HERO_COLOR);
+    const monsterAppearance = MONSTER_APPEARANCE[runState.monsterTier];
+    this.monsterView = this.createUnitView(MONSTER_X, monsterAppearance.width, monsterAppearance.height, monsterAppearance.color);
+
+    this.updateUnitView(this.heroView, state.hero.name, state.hero.hp, state.hero.maxHp);
+    this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
+    this.pushSnapshotToStore();
+  }
+
+  private handleEvents(events: WaveEvent[]): void {
     for (const event of events) {
-      if (event.type === 'attack') {
-        const target = event.targetId === this.hero.combatant.id ? this.hero : this.monster;
+      if (event.type === 'combat' && event.event.type === 'attack') {
+        const target = event.event.targetId === this.waveManager.getCombatState().hero.id ? this.heroView : this.monsterView;
         this.flash(target);
       }
-      if (event.type === 'combatEnd') {
-        this.showEndBanner(event.winnerId);
+      if (event.type === 'waveStarted') {
+        const appearance = MONSTER_APPEARANCE[event.monster.tier];
+        this.resizeMonsterView(appearance);
+      }
+      if (event.type === 'levelUp') {
+        this.showLevelUpToast();
       }
     }
-
-    this.refreshUnitView(this.hero);
-    this.refreshUnitView(this.monster);
   }
 
-  private createUnitView(combatant: Combatant, bodyX: number, bodyY: number, color: number): UnitView {
-    const body = this.add.rectangle(bodyX, bodyY, 80, 120, color);
-
-    const hpBarBg = this.add.rectangle(bodyX, bodyY - 90, HP_BAR_WIDTH, HP_BAR_HEIGHT, 0x222222);
-    const hpBarFill = this.add
-      .rectangle(bodyX - HP_BAR_WIDTH / 2, bodyY - 90, HP_BAR_WIDTH, HP_BAR_HEIGHT, 0x2ecc71)
-      .setOrigin(0, 0.5);
-
-    const hpLabel = this.add
-      .text(bodyX, bodyY - 112, `${combatant.name}  ${combatant.hp}/${combatant.maxHp}`, {
-        fontSize: '14px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
-    return { combatant, bodyX, bodyY, color, body, hpBarBg, hpBarFill, hpLabel };
+  private syncUnitViews(): void {
+    const state = this.waveManager.getCombatState();
+    this.updateUnitView(this.heroView, state.hero.name, state.hero.hp, state.hero.maxHp);
+    this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
   }
 
-  private refreshUnitView(view: UnitView): void {
-    const state = this.engine.getState();
-    const combatant = view.combatant.id === state.hero.id ? state.hero : state.monster;
-    const ratio = Phaser.Math.Clamp(combatant.hp / combatant.maxHp, 0, 1);
+  private pushSnapshotToStore(): void {
+    const combat = this.waveManager.getCombatState();
+    const run = this.waveManager.getRunState();
 
-    view.hpBarFill.width = HP_BAR_WIDTH * ratio;
-    view.hpBarFill.fillColor = ratio > 0.3 ? 0x2ecc71 : 0xe74c3c;
-    view.hpLabel.setText(`${combatant.name}  ${combatant.hp}/${combatant.maxHp}`);
-
-    if (combatant.hp <= 0) {
-      view.body.setAlpha(0.3);
-    }
-  }
-
-  private flash(view: UnitView): void {
-    this.tweens.add({
-      targets: view.body,
-      alpha: { from: 0.4, to: 1 },
-      duration: 150,
+    useRunStore.getState().setSnapshot({
+      waveNumber: run.waveNumber,
+      monsterName: combat.monster.name,
+      monsterTier: run.monsterTier,
+      monsterHp: combat.monster.hp,
+      monsterMaxHp: combat.monster.maxHp,
+      heroLevel: run.heroProgress.level,
+      heroXp: run.heroProgress.xp,
+      heroXpToNext: xpForNextLevel(run.heroProgress.level),
+      heroHp: combat.hero.hp,
+      heroMaxHp: combat.hero.maxHp,
+      isGameOver: run.isGameOver,
     });
   }
 
-  private showEndBanner(winnerId: string | null): void {
-    if (this.endBanner) return;
+  private createUnitView(bodyX: number, width: number, height: number, color: number): UnitView {
+    const body = this.add.rectangle(bodyX, UNIT_Y, width, height, color);
+    const hpBarBg = this.add.rectangle(bodyX, UNIT_Y - 90, HP_BAR_WIDTH, HP_BAR_HEIGHT, 0x222222);
+    const hpBarFill = this.add
+      .rectangle(bodyX - HP_BAR_WIDTH / 2, UNIT_Y - 90, HP_BAR_WIDTH, HP_BAR_HEIGHT, 0x2ecc71)
+      .setOrigin(0, 0.5);
+    const hpLabel = this.add.text(bodyX, UNIT_Y - 112, '', { fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
 
-    const text = winnerId === this.hero.combatant.id ? 'Victory' : 'Defeat';
-    this.endBanner = this.add
-      .text(400, 100, text, {
-        fontSize: '48px',
-        color: winnerId === this.hero.combatant.id ? '#f1c40f' : '#e74c3c',
-        fontStyle: 'bold',
-      })
+    return { body, hpBarBg, hpBarFill, hpLabel };
+  }
+
+  private destroyUnitView(view: UnitView): void {
+    view.body.destroy();
+    view.hpBarBg.destroy();
+    view.hpBarFill.destroy();
+    view.hpLabel.destroy();
+  }
+
+  private resizeMonsterView(appearance: { color: number; width: number; height: number }): void {
+    this.monsterView.body.width = appearance.width;
+    this.monsterView.body.height = appearance.height;
+    this.monsterView.body.fillColor = appearance.color;
+    this.monsterView.body.setAlpha(1);
+  }
+
+  private updateUnitView(view: UnitView, name: string, hp: number, maxHp: number): void {
+    const ratio = Phaser.Math.Clamp(maxHp > 0 ? hp / maxHp : 0, 0, 1);
+    view.hpBarFill.width = HP_BAR_WIDTH * ratio;
+    view.hpBarFill.fillColor = ratio > 0.3 ? 0x2ecc71 : 0xe74c3c;
+    view.hpLabel.setText(`${name}  ${hp}/${maxHp}`);
+    view.body.setAlpha(hp <= 0 ? 0.3 : 1);
+  }
+
+  private flash(view: UnitView): void {
+    this.tweens.add({ targets: view.body, alpha: { from: 0.4, to: 1 }, duration: 150 });
+  }
+
+  private showLevelUpToast(): void {
+    const toast = this.add
+      .text(HERO_X, UNIT_Y - 130, 'LEVEL UP!', { fontSize: '18px', color: '#f1c40f', fontStyle: 'bold' })
       .setOrigin(0.5);
+    this.tweens.add({
+      targets: toast,
+      y: toast.y - 40,
+      alpha: 0,
+      duration: 900,
+      onComplete: () => toast.destroy(),
+    });
   }
 }
