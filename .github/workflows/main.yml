@@ -37,8 +37,9 @@ jobs:
           if [ -d "dist" ]; then ls -la dist || true; else echo "dist not found"; fi
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v1
+        uses: actions/upload-artifact@v4
         with:
+          name: pages
           path: ./dist
 
   deploy:
