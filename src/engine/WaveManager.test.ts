@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { WaveManager } from './WaveManager';
 import type { HeroDefinition } from '../data/hero.types';
 import { BOSS_WAVE_INTERVAL, MINIBOSS_WAVE_INTERVAL } from './waveScaling';
+import { relicRegistry } from '../data/relics';
 
 const testHero: HeroDefinition = {
   id: 'hero',
@@ -10,13 +11,19 @@ const testHero: HeroDefinition = {
   growth: { maxHpPerLevel: 10, attackPerLevel: 1 },
 };
 
-/** Ticks until the run advances by at least one wave or ends, to avoid depending on exact timing. */
-function tickUntilWaveChange(manager: WaveManager, stepMs = 200, maxSteps = 500) {
+/**
+ * Ticks until the wave clears, then immediately takes the first loot option
+ * (to keep the run moving) unless it ends instead. Avoids depending on exact timing.
+ */
+function advanceOneWave(manager: WaveManager, stepMs = 200, maxSteps = 500) {
   const startingWave = manager.getRunState().waveNumber;
   const allEvents = [];
   for (let i = 0; i < maxSteps; i++) {
-    const events = manager.tick(stepMs);
-    allEvents.push(...events);
+    if (manager.getRunState().isChoosingLoot) {
+      allEvents.push(...manager.chooseLoot(0));
+    } else {
+      allEvents.push(...manager.tick(stepMs));
+    }
     if (manager.getRunState().waveNumber !== startingWave || manager.getRunState().isGameOver) {
       break;
     }
@@ -25,7 +32,7 @@ function tickUntilWaveChange(manager: WaveManager, stepMs = 200, maxSteps = 500)
 }
 
 describe('WaveManager', () => {
-  it('starts at wave 1 with a normal-tier monster and level 1', () => {
+  it('starts at wave 1 with a normal-tier monster, level 1, and no loot pending', () => {
     const manager = new WaveManager(testHero, 1);
     const state = manager.getRunState();
 
@@ -33,23 +40,98 @@ describe('WaveManager', () => {
     expect(state.monsterTier).toBe('normal');
     expect(state.heroProgress).toEqual({ level: 1, xp: 0 });
     expect(state.isGameOver).toBe(false);
+    expect(state.isChoosingLoot).toBe(false);
+    expect(state.gold).toBe(0);
+    expect(state.ownedRelics).toEqual([]);
   });
 
-  it('clears waves, awards xp, and advances the wave number using an overwhelmingly strong hero', () => {
+  it('pauses for a loot choice after clearing a wave, offering 3 options', () => {
     const manager = new WaveManager(testHero, 1);
-    const events = tickUntilWaveChange(manager);
+    const events = [];
+    for (let i = 0; i < 50 && !manager.getRunState().isChoosingLoot; i++) {
+      events.push(...manager.tick(200));
+    }
+
+    expect(manager.getRunState().isChoosingLoot).toBe(true);
+    expect(manager.getRunState().lootOptions).toHaveLength(3);
+    expect(events.some((e) => e.type === 'lootOffered')).toBe(true);
+    // combat should not advance further while awaiting a choice
+    const frozenState = structuredClone(manager.getCombatState());
+    manager.tick(5000);
+    expect(manager.getCombatState()).toEqual(frozenState);
+  });
+
+  it('advances the wave number and awards xp after a loot choice is made', () => {
+    const manager = new WaveManager(testHero, 1);
+    const events = advanceOneWave(manager);
 
     expect(manager.getRunState().waveNumber).toBe(2);
     expect(events.some((e) => e.type === 'waveCleared')).toBe(true);
+    expect(events.some((e) => e.type === 'lootChosen')).toBe(true);
     expect(events.some((e) => e.type === 'waveStarted')).toBe(true);
     expect(manager.getRunState().heroProgress.xp).toBeGreaterThan(0);
+  });
+
+  it('adds a relic to ownedRelics when a relic loot option is chosen', () => {
+    const manager = new WaveManager(testHero, 1);
+    for (let i = 0; i < 50 && !manager.getRunState().isChoosingLoot; i++) {
+      manager.tick(200);
+    }
+    const options = manager.getRunState().lootOptions;
+    const relicIndex = options.findIndex((o) => o.kind === 'relic');
+    expect(relicIndex).toBeGreaterThanOrEqual(0);
+
+    const chosen = options[relicIndex];
+    manager.chooseLoot(relicIndex);
+
+    expect(chosen?.kind).toBe('relic');
+    if (chosen?.kind === 'relic') {
+      expect(manager.getRunState().ownedRelics).toEqual([{ id: chosen.relic.id, count: 1 }]);
+    }
+  });
+
+  it('equips gear into the correct slot when an equipment loot option is chosen', () => {
+    const manager = new WaveManager(testHero, 2);
+    for (let i = 0; i < 50 && !manager.getRunState().isChoosingLoot; i++) {
+      manager.tick(200);
+    }
+    const options = manager.getRunState().lootOptions;
+    const equipIndex = options.findIndex((o) => o.kind === 'equipment');
+    expect(equipIndex).toBeGreaterThanOrEqual(0);
+
+    const chosen = options[equipIndex];
+    manager.chooseLoot(equipIndex);
+
+    if (chosen?.kind === 'equipment') {
+      expect(manager.getRunState().equipped[chosen.equipment.slot]).toEqual({
+        defId: chosen.equipment.id,
+        rarity: chosen.rarity,
+      });
+    }
+  });
+
+  it('adds gold when a gold loot option is chosen', () => {
+    const manager = new WaveManager(testHero, 4);
+    for (let i = 0; i < 50 && !manager.getRunState().isChoosingLoot; i++) {
+      manager.tick(200);
+    }
+    const options = manager.getRunState().lootOptions;
+    const goldIndex = options.findIndex((o) => o.kind === 'gold');
+    expect(goldIndex).toBeGreaterThanOrEqual(0);
+
+    const chosen = options[goldIndex];
+    manager.chooseLoot(goldIndex);
+
+    if (chosen?.kind === 'gold') {
+      expect(manager.getRunState().gold).toBe(chosen.amount);
+    }
   });
 
   it('reaches a miniboss-tier wave at the configured interval', () => {
     const manager = new WaveManager(testHero, 2);
 
     while (manager.getRunState().waveNumber < MINIBOSS_WAVE_INTERVAL && !manager.getRunState().isGameOver) {
-      tickUntilWaveChange(manager);
+      advanceOneWave(manager);
     }
 
     expect(manager.getRunState().waveNumber).toBe(MINIBOSS_WAVE_INTERVAL);
@@ -60,14 +142,14 @@ describe('WaveManager', () => {
     const manager = new WaveManager(testHero, 3);
 
     while (manager.getRunState().waveNumber < BOSS_WAVE_INTERVAL && !manager.getRunState().isGameOver) {
-      tickUntilWaveChange(manager);
+      advanceOneWave(manager);
     }
 
     expect(manager.getRunState().waveNumber).toBe(BOSS_WAVE_INTERVAL);
     expect(manager.getRunState().monsterTier).toBe('boss');
   });
 
-  it('ends the run and stops ticking once the hero dies', () => {
+  it('ends the run and stops ticking once the hero dies (without Phoenix Heart)', () => {
     const weakHero: HeroDefinition = {
       id: 'hero',
       name: 'Hero',
@@ -85,5 +167,30 @@ describe('WaveManager', () => {
     const laterEvents = manager.tick(10_000);
     expect(laterEvents).toEqual([]);
     expect(manager.getRunState()).toEqual(snapshot);
+  });
+
+  it('revives once via Phoenix Heart instead of ending the run, then dies normally on the second lethal hit', () => {
+    const weakHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 100, attack: 0, attackIntervalMs: 100_000 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(weakHero, 1);
+    // Grant Phoenix Heart directly for the test rather than relying on RNG loot luck.
+    (manager as unknown as { state: { ownedRelics: { id: string; count: number }[] } }).state.ownedRelics = [
+      { id: 'phoenix_heart', count: 1 },
+    ];
+    expect(relicRegistry.get('phoenix_heart').special).toBe('phoenixRevive');
+
+    const firstDeath = manager.tick(200_000);
+    expect(firstDeath.some((e) => e.type === 'revived')).toBe(true);
+    expect(manager.getRunState().isGameOver).toBe(false);
+    expect(manager.getRunState().hasUsedPhoenixRevive).toBe(true);
+    expect(manager.getCombatState().hero.hp).toBeGreaterThan(0);
+
+    const secondDeath = manager.tick(200_000);
+    expect(secondDeath.some((e) => e.type === 'runOver')).toBe(true);
+    expect(manager.getRunState().isGameOver).toBe(true);
   });
 });
