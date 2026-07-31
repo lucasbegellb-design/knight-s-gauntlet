@@ -14,6 +14,7 @@ import { allMonsters } from '../data/monsters';
 import { spellRegistry } from '../data/spells';
 import { classRegistry, knightClass } from '../data/classes';
 import { allZones } from '../data/zones';
+import { resolveForgeWeaponModifiers } from '../data/forgeWeapon';
 import { useRunStore } from '../store/runStore';
 import type { EquippedDisplay } from '../store/runStore';
 import { useMetaStore } from '../store/metaStore';
@@ -23,12 +24,12 @@ const HERO_TEXTURE_KEY = 'hero_knight';
 const monsterTextureKey = (id: string) => `monster_${id}`;
 
 const HERO_COLOR = 0x3b82c4;
-const HERO_SIZE = { width: 90, height: 130 };
+const HERO_SIZE = { width: 130, height: 150 };
 
 const MONSTER_APPEARANCE: Record<MonsterTier, { color: number; width: number; height: number }> = {
-  normal: { color: 0xc0392b, width: 80, height: 110 },
-  miniboss: { color: 0xe67e22, width: 104, height: 144 },
-  boss: { color: 0x8e2de2, width: 128, height: 176 },
+  normal: { color: 0xc0392b, width: 120, height: 130 },
+  miniboss: { color: 0xe67e22, width: 150, height: 160 },
+  boss: { color: 0x8e2de2, width: 175, height: 190 },
 };
 
 /** Per-monster scale tweak layered on top of the tier's base size, so a few standouts read as bigger/smaller than their tier peers. */
@@ -132,6 +133,7 @@ export class CombatScene extends Phaser.Scene {
       forgeLevel: meta.forgeLevel,
       companionUpgrades: meta.companionUpgrades,
       classModifiers,
+      forgeWeaponModifiers: resolveForgeWeaponModifiers(meta.forgeWeaponLevel),
     };
   }
 
@@ -235,11 +237,15 @@ export class CombatScene extends Phaser.Scene {
       if (event.type === 'revived') {
         this.showFloatingText(HERO_X, UNIT_Y - 130, 'REVIVED!', '#ff3b6b');
       }
+      if (event.type === 'brokenPartsDropped') {
+        this.showFloatingText(MONSTER_X, UNIT_Y - 175, `+${event.amount} Broken Parts`, '#b39dff');
+      }
       if (event.type === 'lootChosen') {
         this.discoverLootOption(event.option);
       }
       if (event.type === 'runOver') {
         useMetaStore.getState().depositCurrency(this.waveManager.getRunState().gold);
+        useMetaStore.getState().depositBrokenParts(this.waveManager.getRunState().brokenParts);
       }
     }
   }
@@ -372,6 +378,7 @@ export class CombatScene extends Phaser.Scene {
       heroMaxHp: combat.hero.maxHp,
       isGameOver: run.isGameOver,
       gold: run.gold,
+      brokenParts: run.brokenParts,
       ownedRelics,
       equipped,
       companions,
@@ -396,8 +403,15 @@ export class CombatScene extends Phaser.Scene {
     const barY = bodyY - height / 2 - 20;
     const body =
       textureKey && this.textures.exists(textureKey)
-        ? this.add.image(bodyX, bodyY, textureKey).setDisplaySize(width, height)
+        ? this.add.image(bodyX, bodyY, textureKey)
         : this.add.rectangle(bodyX, bodyY, width, height, color);
+    if ('setDisplaySize' in body) {
+      // Contain-fit within the tier's bounding box instead of stretching — sprites keep their real proportions.
+      const srcW = body.width || width;
+      const srcH = body.height || height;
+      const fitScale = Math.min(width / srcW, height / srcH);
+      body.setDisplaySize(srcW * fitScale, srcH * fitScale);
+    }
     if (tint !== undefined && tint !== 0xffffff && 'setTint' in body) body.setTint(tint);
     const hpBarBg = this.add.rectangle(bodyX, barY, barWidth, barHeight, 0x222222);
     const hpBarFill = this.add.rectangle(bodyX - barWidth / 2, barY, barWidth, barHeight, 0x2ecc71).setOrigin(0, 0.5);

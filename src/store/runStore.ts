@@ -46,6 +46,7 @@ export interface RunSnapshot {
   heroMaxHp: number;
   isGameOver: boolean;
   gold: number;
+  brokenParts: number;
   ownedRelics: OwnedRelicDisplay[];
   equipped: EquippedDisplay;
   companions: CompanionDisplay[];
@@ -79,6 +80,7 @@ const initialSnapshot: RunSnapshot = {
   heroMaxHp: 0,
   isGameOver: false,
   gold: 0,
+  brokenParts: 0,
   ownedRelics: [],
   equipped: { weapon: null, armor: null, accessory: null },
   companions: [],

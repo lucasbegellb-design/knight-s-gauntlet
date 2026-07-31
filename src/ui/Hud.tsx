@@ -82,7 +82,8 @@ export function Hud() {
             x{speed}
           </button>
         ))}
-        <span className="gold-display">{state.gold} gold</span>
+        {state.brokenParts > 0 && <span className="hud-sublabel">⚙️ {state.brokenParts} broken parts</span>}
+        <span className="gold-display">🪙 {state.gold} gold</span>
       </div>
 
       <div className="hud-row">

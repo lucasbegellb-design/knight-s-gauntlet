@@ -15,7 +15,15 @@ function rebuildEngine(manager: WaveManager): void {
 }
 
 function makeMetaBonuses(overrides: Partial<MetaBonuses> = {}): MetaBonuses {
-  return { talentModifiers: [], lootLuckBonus: 0, forgeLevel: 0, companionUpgrades: {}, classModifiers: [], ...overrides };
+  return {
+    talentModifiers: [],
+    lootLuckBonus: 0,
+    forgeLevel: 0,
+    companionUpgrades: {},
+    classModifiers: [],
+    forgeWeaponModifiers: [],
+    ...overrides,
+  };
 }
 
 const testHero: HeroDefinition = {
@@ -329,6 +337,36 @@ describe('WaveManager', () => {
     expect(attackEvent && attackEvent.type === 'combat' && attackEvent.event.type === 'attack' ? attackEvent.event.damage : null).toBe(
       26,
     );
+  });
+
+  it('applies forge weapon modifiers to the heros combat damage', () => {
+    const weakHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 1000, attack: 1, attackIntervalMs: 500 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(weakHero, 1, makeMetaBonuses({ forgeWeaponModifiers: [{ kind: 'flatDamageBonus', value: 10 }] }));
+
+    const events = manager.tick(500);
+
+    const attackEvent = events.find((e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'hero');
+    expect(attackEvent && attackEvent.type === 'combat' && attackEvent.event.type === 'attack' ? attackEvent.event.damage : null).toBe(
+      11,
+    );
+  });
+
+  it('accumulates broken parts into run state as waves are cleared', () => {
+    const manager = new WaveManager(testHero, 1);
+    // Boss-tier drops are guaranteed (100% chance), so force the tier via advanceOneWave up to wave BOSS_WAVE_INTERVAL.
+    while (manager.getRunState().waveNumber < BOSS_WAVE_INTERVAL && !manager.getRunState().isGameOver) {
+      advanceOneWave(manager);
+    }
+    expect(manager.getRunState().monsterTier).toBe('boss');
+
+    const events = advanceOneWave(manager);
+    expect(events.some((e) => e.type === 'brokenPartsDropped')).toBe(true);
+    expect(manager.getRunState().brokenParts).toBeGreaterThan(0);
   });
 
   it('scales an equipped items modifier by forge level', () => {

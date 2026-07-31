@@ -10,19 +10,28 @@ function App() {
 
   return (
     <main className="app-shell">
-      <h1>Knight&rsquo;s Gauntlet</h1>
-      {screen === 'hub' && <Hub />}
-      {screen === 'classSelect' && <ClassSelect />}
-      {screen === 'run' && (
-        <>
-          <Hud />
-          <div className="game-area">
-            <PhaserGame />
-            <GameOverOverlay />
-            <LootPopup />
-          </div>
-        </>
-      )}
+      <header className="app-header">
+        <span className="app-header-glyph">⚔</span>
+        <h1>
+          Knight<span className="app-title-accent">&rsquo;s</span> Gauntlet
+        </h1>
+        <span className="app-header-glyph">⚔</span>
+      </header>
+
+      <div className="screen-fade" key={screen}>
+        {screen === 'hub' && <Hub />}
+        {screen === 'classSelect' && <ClassSelect />}
+        {screen === 'run' && (
+          <>
+            <Hud />
+            <div className="game-area">
+              <PhaserGame />
+              <GameOverOverlay />
+              <LootPopup />
+            </div>
+          </>
+        )}
+      </div>
     </main>
   );
 }
