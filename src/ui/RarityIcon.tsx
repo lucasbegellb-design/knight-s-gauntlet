@@ -4,7 +4,7 @@ import type { Rarity } from '../data/rarity';
 export function RarityIcon({ rarity, size = 18 }: { rarity: Rarity; size?: number }) {
   return (
     <img
-      src={`/game-assets/icons/rarity_${rarity}.png`}
+      src={`game-assets/icons/rarity_${rarity}.png`}
       width={size}
       height={size}
       alt=""
@@ -20,7 +20,7 @@ export function RarityIcon({ rarity, size = 18 }: { rarity: Rarity; size?: numbe
 export function GeneratedPortrait({ category, id, size = 40 }: { category: string; id: string; size?: number }) {
   return (
     <img
-      src={`/game-assets/${category}/${id}.png`}
+      src={`game-assets/${category}/${id}.png`}
       width={size}
       height={size}
       alt=""

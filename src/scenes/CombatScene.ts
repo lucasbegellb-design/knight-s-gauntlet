@@ -10,18 +10,23 @@ import type { CompanionRole } from '../data/companion.types';
 import { relicRegistry } from '../data/relics';
 import { equipmentRegistry } from '../data/equipment';
 import { companionRegistry } from '../data/companions';
+import { allMonsters } from '../data/monsters';
 import { spellRegistry } from '../data/spells';
 import { useRunStore } from '../store/runStore';
 import type { EquippedDisplay } from '../store/runStore';
 import { useMetaStore } from '../store/metaStore';
 
+const ASSET_BASE = 'game-assets';
+const HERO_TEXTURE_KEY = 'hero_knight';
+const monsterTextureKey = (id: string) => `monster_${id}`;
+
 const HERO_COLOR = 0x3b82c4;
-const HERO_SIZE = { width: 80, height: 120 };
+const HERO_SIZE = { width: 90, height: 130 };
 
 const MONSTER_APPEARANCE: Record<MonsterTier, { color: number; width: number; height: number }> = {
-  normal: { color: 0xc0392b, width: 70, height: 100 },
-  miniboss: { color: 0xe67e22, width: 92, height: 130 },
-  boss: { color: 0x8e2de2, width: 114, height: 160 },
+  normal: { color: 0xc0392b, width: 80, height: 110 },
+  miniboss: { color: 0xe67e22, width: 104, height: 144 },
+  boss: { color: 0x8e2de2, width: 128, height: 176 },
 };
 
 const COMPANION_ROLE_COLOR: Record<CompanionRole, number> = {
@@ -44,7 +49,7 @@ const COMPANION_SLOT_X = [140, 220, 300];
 const COMPANION_SIZE = { width: 44, height: 64 };
 
 interface UnitView {
-  body: Phaser.GameObjects.Rectangle;
+  body: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
   hpBarBg: Phaser.GameObjects.Rectangle;
   hpBarFill: Phaser.GameObjects.Rectangle;
   hpLabel: Phaser.GameObjects.Text;
@@ -59,6 +64,13 @@ export class CombatScene extends Phaser.Scene {
 
   constructor() {
     super('CombatScene');
+  }
+
+  preload(): void {
+    this.load.image(HERO_TEXTURE_KEY, `${ASSET_BASE}/hero/knight.png`);
+    for (const monster of allMonsters) {
+      this.load.image(monsterTextureKey(monster.id), `${ASSET_BASE}/monsters/${monster.id}.png`);
+    }
   }
 
   create(): void {
@@ -98,7 +110,6 @@ export class CombatScene extends Phaser.Scene {
     this.waveManager = new WaveManager(knight, Date.now(), this.buildMetaBonuses());
 
     const state = this.waveManager.getCombatState();
-    const runState = this.waveManager.getRunState();
     useMetaStore.getState().discover('monster', state.monster.id);
 
     if (this.heroView) this.destroyUnitView(this.heroView);
@@ -106,14 +117,27 @@ export class CombatScene extends Phaser.Scene {
     this.allyViews.forEach((view) => this.destroyUnitView(view));
     this.allyViews = [];
 
-    this.heroView = this.createUnitView(HERO_X, UNIT_Y, HERO_SIZE.width, HERO_SIZE.height, HERO_COLOR);
-    const monsterAppearance = MONSTER_APPEARANCE[runState.monsterTier];
-    this.monsterView = this.createUnitView(MONSTER_X, UNIT_Y, monsterAppearance.width, monsterAppearance.height, monsterAppearance.color);
-
+    this.heroView = this.createUnitView(HERO_X, UNIT_Y, HERO_SIZE.width, HERO_SIZE.height, HERO_COLOR, HERO_TEXTURE_KEY);
     this.updateUnitView(this.heroView, state.hero.name, state.hero.hp, state.hero.maxHp);
-    this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
+    this.rebuildMonsterView();
     this.rebuildAllyViews();
     this.pushSnapshotToStore();
+  }
+
+  private rebuildMonsterView(): void {
+    if (this.monsterView) this.destroyUnitView(this.monsterView);
+    const state = this.waveManager.getCombatState();
+    const runState = this.waveManager.getRunState();
+    const appearance = MONSTER_APPEARANCE[runState.monsterTier];
+    this.monsterView = this.createUnitView(
+      MONSTER_X,
+      UNIT_Y,
+      appearance.width,
+      appearance.height,
+      appearance.color,
+      monsterTextureKey(state.monster.id),
+    );
+    this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
   }
 
   private rebuildAllyViews(): void {
@@ -124,7 +148,16 @@ export class CombatScene extends Phaser.Scene {
     allies.forEach((ally, index) => {
       const x = COMPANION_SLOT_X[index] ?? COMPANION_SLOT_X[COMPANION_SLOT_X.length - 1] ?? HERO_X;
       const color = COMPANION_ROLE_COLOR[ally.role];
-      const view = this.createUnitView(x, COMPANION_Y, COMPANION_SIZE.width, COMPANION_SIZE.height, color, COMPANION_BAR_WIDTH, COMPANION_BAR_HEIGHT);
+      const view = this.createUnitView(
+        x,
+        COMPANION_Y,
+        COMPANION_SIZE.width,
+        COMPANION_SIZE.height,
+        color,
+        undefined,
+        COMPANION_BAR_WIDTH,
+        COMPANION_BAR_HEIGHT,
+      );
       this.updateUnitView(view, ally.combatant.name, ally.combatant.hp, ally.combatant.maxHp, COMPANION_BAR_WIDTH);
       this.allyViews.push(view);
     });
@@ -136,8 +169,7 @@ export class CombatScene extends Phaser.Scene {
         this.handleCombatEvent(event.event);
       }
       if (event.type === 'waveStarted') {
-        const appearance = MONSTER_APPEARANCE[event.monster.tier];
-        this.resizeMonsterView(appearance);
+        this.rebuildMonsterView();
         this.rebuildAllyViews();
         useMetaStore.getState().discover('monster', event.monster.id);
       }
@@ -292,11 +324,15 @@ export class CombatScene extends Phaser.Scene {
     width: number,
     height: number,
     color: number,
+    textureKey?: string,
     barWidth: number = HP_BAR_WIDTH,
     barHeight: number = HP_BAR_HEIGHT,
   ): UnitView {
     const barY = bodyY - height / 2 - 20;
-    const body = this.add.rectangle(bodyX, bodyY, width, height, color);
+    const body =
+      textureKey && this.textures.exists(textureKey)
+        ? this.add.image(bodyX, bodyY, textureKey).setDisplaySize(width, height)
+        : this.add.rectangle(bodyX, bodyY, width, height, color);
     const hpBarBg = this.add.rectangle(bodyX, barY, barWidth, barHeight, 0x222222);
     const hpBarFill = this.add.rectangle(bodyX - barWidth / 2, barY, barWidth, barHeight, 0x2ecc71).setOrigin(0, 0.5);
     const hpLabel = this.add
@@ -311,13 +347,6 @@ export class CombatScene extends Phaser.Scene {
     view.hpBarBg.destroy();
     view.hpBarFill.destroy();
     view.hpLabel.destroy();
-  }
-
-  private resizeMonsterView(appearance: { color: number; width: number; height: number }): void {
-    this.monsterView.body.width = appearance.width;
-    this.monsterView.body.height = appearance.height;
-    this.monsterView.body.fillColor = appearance.color;
-    this.monsterView.body.setAlpha(1);
   }
 
   private updateUnitView(view: UnitView, name: string, hp: number, maxHp: number, barWidth: number = HP_BAR_WIDTH): void {
