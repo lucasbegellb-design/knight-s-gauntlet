@@ -1,6 +1,7 @@
 import { useRunStore } from '../store/runStore';
 import { RARITY_COLOR, RARITY_LABEL, type Rarity } from '../data/rarity';
 import type { LootOption } from '../engine/loot';
+import { RarityIcon } from './RarityIcon';
 
 function describeOption(option: LootOption): { name: string; description: string; rarity: Rarity; kindLabel: string } {
   if (option.kind === 'relic') {
@@ -57,7 +58,7 @@ export function LootPopup() {
               onClick={() => requestLootChoice(index)}
             >
               <div className="loot-card-rarity" style={{ color }}>
-                {RARITY_LABEL[info.rarity]}
+                <RarityIcon rarity={info.rarity} size={16} /> {RARITY_LABEL[info.rarity]}
               </div>
               <div className="loot-card-kind">{info.kindLabel}</div>
               <div className="loot-card-name">{info.name}</div>

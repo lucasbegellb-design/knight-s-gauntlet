@@ -9,6 +9,7 @@ import { allSpells } from '../data/spells';
 import { allEquipment } from '../data/equipment';
 import { allMonsters } from '../data/monsters';
 import { RARITY_COLOR, RARITY_LABEL } from '../data/rarity';
+import { GeneratedPortrait } from './RarityIcon';
 
 const BRANCH_LABEL: Record<TalentBranch, string> = {
   offense: 'Offense',
@@ -215,6 +216,7 @@ function GrimoireTab() {
           const known = discoveredMonsterIds.includes(monster.id);
           return (
             <div key={monster.id} className="hub-row-item">
+              {known && <GeneratedPortrait category="monsters" id={monster.id} size={36} />}
               <div>
                 <div className="hub-item-name">{known ? monster.name : '???'}</div>
                 {known && <div className="hub-item-description">{monster.tier}</div>}
@@ -235,6 +237,7 @@ export function Hub() {
   return (
     <div className="hub">
       <div className="hud-row">
+        <GeneratedPortrait category="hero" id="knight" size={44} />
         <h2 className="hub-title">Camp</h2>
         <span className="gold-display">{currency} essence</span>
         <button type="button" className="restart-button" onClick={() => setScreen('run')}>
