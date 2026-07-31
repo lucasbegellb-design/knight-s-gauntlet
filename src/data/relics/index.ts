@@ -18,6 +18,12 @@ import { ironSkin } from './ironSkin';
 import { guardiansBlessing } from './guardiansBlessing';
 import { thornmailWard } from './thornmailWard';
 import { phoenixHeart } from './phoenixHeart';
+import { firePackRelics } from './firePack';
+import { critPackRelics } from './critPack';
+import { bloodPackRelics } from './bloodPack';
+import { economyPackRelics } from './economyPack';
+import { speedPackRelics } from './speedPack';
+import { vitalityPackRelics } from './vitalityPack';
 
 export const relicRegistry = new Registry<RelicDefinition>();
 
@@ -40,6 +46,12 @@ relicRegistry.registerAll([
   guardiansBlessing,
   thornmailWard,
   phoenixHeart,
+  ...firePackRelics,
+  ...critPackRelics,
+  ...bloodPackRelics,
+  ...economyPackRelics,
+  ...speedPackRelics,
+  ...vitalityPackRelics,
 ]);
 
 export const allRelics = relicRegistry.all();

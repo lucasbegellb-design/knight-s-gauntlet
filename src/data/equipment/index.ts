@@ -6,9 +6,18 @@ import { knightsPlate } from './knightsPlate';
 import { guardianPlate } from './guardianPlate';
 import { luckyCharm } from './luckyCharm';
 import { merchantsRing } from './merchantsRing';
+import { equipmentPack2 } from './pack2';
 
 export const equipmentRegistry = new Registry<EquipmentDefinition>();
 
-equipmentRegistry.registerAll([knightsBlade, flameforgedBlade, knightsPlate, guardianPlate, luckyCharm, merchantsRing]);
+equipmentRegistry.registerAll([
+  knightsBlade,
+  flameforgedBlade,
+  knightsPlate,
+  guardianPlate,
+  luckyCharm,
+  merchantsRing,
+  ...equipmentPack2,
+]);
 
 export const allEquipment = equipmentRegistry.all();
