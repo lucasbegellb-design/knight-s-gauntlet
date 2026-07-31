@@ -16,6 +16,14 @@ const TIER_COLOR: Record<string, string> = {
   boss: '#e74c3c',
 };
 
+const ROLE_COLOR: Record<string, string> = {
+  tank: '#5d7a99',
+  dps: '#d35400',
+  healer: '#27ae60',
+  support: '#8e44ad',
+  summoner: '#16a085',
+};
+
 function Bar({ value, max, color }: { value: number; max: number; color: string }) {
   const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
   return (
@@ -89,12 +97,44 @@ export function Hud() {
         })}
       </div>
 
-      {state.ownedRelics.length > 0 && (
+      {state.companions.length > 0 && (
+        <div className="hud-row relic-tray">
+          {state.companions.map((companion) => (
+            <div
+              key={companion.id}
+              className="companion-chip"
+              style={{ borderColor: ROLE_COLOR[companion.role], color: companion.hp > 0 ? '#f3f4f6' : '#5c5f6a' }}
+            >
+              <span style={{ color: ROLE_COLOR[companion.role] }}>{companion.role}</span> {companion.name}{' '}
+              {companion.hp > 0 ? `${companion.hp}/${companion.maxHp}` : '(fallen)'}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {state.activeSpells.length > 0 && (
+        <div className="hud-row relic-tray">
+          <span className="hud-sublabel">Active</span>
+          {state.activeSpells.map((spell) => (
+            <div key={spell.id} className="relic-chip" style={{ borderColor: RARITY_COLOR[spell.rarity], color: RARITY_COLOR[spell.rarity] }}>
+              {spell.name}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(state.ownedRelics.length > 0 || state.passiveSpells.length > 0) && (
         <div className="hud-row relic-tray">
           {state.ownedRelics.map((relic) => (
             <div key={relic.id} className="relic-chip" style={{ borderColor: RARITY_COLOR[relic.rarity], color: RARITY_COLOR[relic.rarity] }}>
               {relic.name}
               {relic.count > 1 ? ` x${relic.count}` : ''}
+            </div>
+          ))}
+          {state.passiveSpells.map((spell) => (
+            <div key={spell.id} className="relic-chip" style={{ borderColor: RARITY_COLOR[spell.rarity], color: RARITY_COLOR[spell.rarity] }}>
+              {spell.name}
+              {spell.count > 1 ? ` x${spell.count}` : ''}
             </div>
           ))}
         </div>

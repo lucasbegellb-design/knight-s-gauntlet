@@ -4,8 +4,11 @@ import { xpForNextLevel } from '../engine/heroProgression';
 import type { CombatEvent } from '../engine/types';
 import { knight } from '../data/hero';
 import type { MonsterTier } from '../data/monster.types';
+import type { CompanionRole } from '../data/companion.types';
 import { relicRegistry } from '../data/relics';
 import { equipmentRegistry } from '../data/equipment';
+import { companionRegistry } from '../data/companions';
+import { spellRegistry } from '../data/spells';
 import { useRunStore } from '../store/runStore';
 import type { EquippedDisplay } from '../store/runStore';
 
@@ -18,11 +21,24 @@ const MONSTER_APPEARANCE: Record<MonsterTier, { color: number; width: number; he
   boss: { color: 0x8e2de2, width: 114, height: 160 },
 };
 
+const COMPANION_ROLE_COLOR: Record<CompanionRole, number> = {
+  tank: 0x34495e,
+  dps: 0xd35400,
+  healer: 0x27ae60,
+  support: 0x8e44ad,
+  summoner: 0x16a085,
+};
+
 const HP_BAR_WIDTH = 160;
 const HP_BAR_HEIGHT = 14;
+const COMPANION_BAR_WIDTH = 70;
+const COMPANION_BAR_HEIGHT = 8;
 const HERO_X = 220;
 const MONSTER_X = 580;
 const UNIT_Y = 260;
+const COMPANION_Y = 400;
+const COMPANION_SLOT_X = [140, 220, 300];
+const COMPANION_SIZE = { width: 44, height: 64 };
 
 interface UnitView {
   body: Phaser.GameObjects.Rectangle;
@@ -35,6 +51,7 @@ export class CombatScene extends Phaser.Scene {
   private waveManager!: WaveManager;
   private heroView!: UnitView;
   private monsterView!: UnitView;
+  private allyViews: UnitView[] = [];
   private lastRestartToken = 0;
   private lastLootChoiceToken = 0;
 
@@ -81,14 +98,31 @@ export class CombatScene extends Phaser.Scene {
 
     if (this.heroView) this.destroyUnitView(this.heroView);
     if (this.monsterView) this.destroyUnitView(this.monsterView);
+    this.allyViews.forEach((view) => this.destroyUnitView(view));
+    this.allyViews = [];
 
-    this.heroView = this.createUnitView(HERO_X, HERO_SIZE.width, HERO_SIZE.height, HERO_COLOR);
+    this.heroView = this.createUnitView(HERO_X, UNIT_Y, HERO_SIZE.width, HERO_SIZE.height, HERO_COLOR);
     const monsterAppearance = MONSTER_APPEARANCE[runState.monsterTier];
-    this.monsterView = this.createUnitView(MONSTER_X, monsterAppearance.width, monsterAppearance.height, monsterAppearance.color);
+    this.monsterView = this.createUnitView(MONSTER_X, UNIT_Y, monsterAppearance.width, monsterAppearance.height, monsterAppearance.color);
 
     this.updateUnitView(this.heroView, state.hero.name, state.hero.hp, state.hero.maxHp);
     this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
+    this.rebuildAllyViews();
     this.pushSnapshotToStore();
+  }
+
+  private rebuildAllyViews(): void {
+    this.allyViews.forEach((view) => this.destroyUnitView(view));
+    this.allyViews = [];
+
+    const allies = this.waveManager.getCombatState().allies;
+    allies.forEach((ally, index) => {
+      const x = COMPANION_SLOT_X[index] ?? COMPANION_SLOT_X[COMPANION_SLOT_X.length - 1] ?? HERO_X;
+      const color = COMPANION_ROLE_COLOR[ally.role];
+      const view = this.createUnitView(x, COMPANION_Y, COMPANION_SIZE.width, COMPANION_SIZE.height, color, COMPANION_BAR_WIDTH, COMPANION_BAR_HEIGHT);
+      this.updateUnitView(view, ally.combatant.name, ally.combatant.hp, ally.combatant.maxHp, COMPANION_BAR_WIDTH);
+      this.allyViews.push(view);
+    });
   }
 
   private handleEvents(events: WaveEvent[]): void {
@@ -99,6 +133,7 @@ export class CombatScene extends Phaser.Scene {
       if (event.type === 'waveStarted') {
         const appearance = MONSTER_APPEARANCE[event.monster.tier];
         this.resizeMonsterView(appearance);
+        this.rebuildAllyViews();
       }
       if (event.type === 'levelUp') {
         this.showFloatingText(HERO_X, UNIT_Y - 130, 'LEVEL UP!', '#f1c40f');
@@ -113,8 +148,8 @@ export class CombatScene extends Phaser.Scene {
     const heroId = this.waveManager.getCombatState().hero.id;
 
     if (event.type === 'attack') {
-      const target = event.targetId === heroId ? this.heroView : this.monsterView;
-      this.flash(target);
+      const view = this.viewForId(event.targetId, heroId);
+      if (view) this.flash(view);
     }
     if (event.type === 'critHit') {
       this.showFloatingText(MONSTER_X, UNIT_Y - 130, 'CRIT!', '#ffd23f');
@@ -131,12 +166,44 @@ export class CombatScene extends Phaser.Scene {
     if (event.type === 'reflect') {
       this.showFloatingText(MONSTER_X, UNIT_Y - 160, `-${event.damage} reflect`, '#9b59b6');
     }
+    if (event.type === 'companionHeal') {
+      const pos = this.positionForId(event.targetId, heroId);
+      if (pos) this.showFloatingText(pos.x, pos.y - 30, `+${event.amount}`, '#2ecc71');
+    }
+    if (event.type === 'spellCast') {
+      const pos = this.positionForId(event.targetId, heroId);
+      const color = event.effect === 'heal' ? '#2ecc71' : event.effect === 'burn' ? '#e67e22' : '#9b59b6';
+      const prefix = event.effect === 'heal' ? '+' : '-';
+      if (pos) this.showFloatingText(pos.x, pos.y - 175, `${prefix}${event.amount}`, color);
+    }
+  }
+
+  private viewForId(id: string, heroId: string): UnitView | undefined {
+    if (id === heroId) return this.heroView;
+    if (id === this.waveManager.getCombatState().monster.id) return this.monsterView;
+    const allies = this.waveManager.getCombatState().allies;
+    const index = allies.findIndex((a) => a.combatant.id === id);
+    return index >= 0 ? this.allyViews[index] : undefined;
+  }
+
+  private positionForId(id: string, heroId: string): { x: number; y: number } | undefined {
+    if (id === heroId) return { x: HERO_X, y: UNIT_Y };
+    if (id === this.waveManager.getCombatState().monster.id) return { x: MONSTER_X, y: UNIT_Y };
+    const allies = this.waveManager.getCombatState().allies;
+    const index = allies.findIndex((a) => a.combatant.id === id);
+    if (index < 0) return undefined;
+    const x = COMPANION_SLOT_X[index] ?? COMPANION_SLOT_X[COMPANION_SLOT_X.length - 1] ?? HERO_X;
+    return { x, y: COMPANION_Y };
   }
 
   private syncUnitViews(): void {
     const state = this.waveManager.getCombatState();
     this.updateUnitView(this.heroView, state.hero.name, state.hero.hp, state.hero.maxHp);
     this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
+    state.allies.forEach((ally, index) => {
+      const view = this.allyViews[index];
+      if (view) this.updateUnitView(view, ally.combatant.name, ally.combatant.hp, ally.combatant.maxHp, COMPANION_BAR_WIDTH);
+    });
   }
 
   private pushSnapshotToStore(): void {
@@ -160,6 +227,22 @@ export class CombatScene extends Phaser.Scene {
         : null,
     };
 
+    const companions = run.companions.map((owned) => {
+      const def = companionRegistry.get(owned.id);
+      const live = combat.allies.find((a) => a.combatant.id === owned.id);
+      return { id: owned.id, name: def.name, role: def.role, hp: live ? live.combatant.hp : owned.hp, maxHp: def.maxHp };
+    });
+
+    const activeSpells = run.activeSpells.map((owned) => {
+      const def = spellRegistry.get(owned.id);
+      return { id: owned.id, name: def.name, rarity: def.rarity, count: owned.count };
+    });
+
+    const passiveSpells = run.passiveSpells.map((owned) => {
+      const def = spellRegistry.get(owned.id);
+      return { id: owned.id, name: def.name, rarity: def.rarity, count: owned.count };
+    });
+
     useRunStore.getState().setSnapshot({
       waveNumber: run.waveNumber,
       monsterName: combat.monster.name,
@@ -175,18 +258,30 @@ export class CombatScene extends Phaser.Scene {
       gold: run.gold,
       ownedRelics,
       equipped,
+      companions,
+      activeSpells,
+      passiveSpells,
       isChoosingLoot: run.isChoosingLoot,
       lootOptions: run.lootOptions,
     });
   }
 
-  private createUnitView(bodyX: number, width: number, height: number, color: number): UnitView {
-    const body = this.add.rectangle(bodyX, UNIT_Y, width, height, color);
-    const hpBarBg = this.add.rectangle(bodyX, UNIT_Y - 90, HP_BAR_WIDTH, HP_BAR_HEIGHT, 0x222222);
-    const hpBarFill = this.add
-      .rectangle(bodyX - HP_BAR_WIDTH / 2, UNIT_Y - 90, HP_BAR_WIDTH, HP_BAR_HEIGHT, 0x2ecc71)
-      .setOrigin(0, 0.5);
-    const hpLabel = this.add.text(bodyX, UNIT_Y - 112, '', { fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
+  private createUnitView(
+    bodyX: number,
+    bodyY: number,
+    width: number,
+    height: number,
+    color: number,
+    barWidth: number = HP_BAR_WIDTH,
+    barHeight: number = HP_BAR_HEIGHT,
+  ): UnitView {
+    const barY = bodyY - height / 2 - 20;
+    const body = this.add.rectangle(bodyX, bodyY, width, height, color);
+    const hpBarBg = this.add.rectangle(bodyX, barY, barWidth, barHeight, 0x222222);
+    const hpBarFill = this.add.rectangle(bodyX - barWidth / 2, barY, barWidth, barHeight, 0x2ecc71).setOrigin(0, 0.5);
+    const hpLabel = this.add
+      .text(bodyX, barY - (barHeight + 8), '', { fontSize: barHeight > 10 ? '14px' : '10px', color: '#ffffff' })
+      .setOrigin(0.5);
 
     return { body, hpBarBg, hpBarFill, hpLabel };
   }
@@ -205,9 +300,9 @@ export class CombatScene extends Phaser.Scene {
     this.monsterView.body.setAlpha(1);
   }
 
-  private updateUnitView(view: UnitView, name: string, hp: number, maxHp: number): void {
+  private updateUnitView(view: UnitView, name: string, hp: number, maxHp: number, barWidth: number = HP_BAR_WIDTH): void {
     const ratio = Phaser.Math.Clamp(maxHp > 0 ? hp / maxHp : 0, 0, 1);
-    view.hpBarFill.width = HP_BAR_WIDTH * ratio;
+    view.hpBarFill.width = barWidth * ratio;
     view.hpBarFill.fillColor = ratio > 0.3 ? 0x2ecc71 : 0xe74c3c;
     view.hpLabel.setText(`${name}  ${hp}/${maxHp}`);
     view.body.setAlpha(hp <= 0 ? 0.3 : 1);

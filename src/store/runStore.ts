@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { MonsterTier } from '../data/monster.types';
 import type { EquipmentSlot } from '../data/equipment.types';
+import type { CompanionRole } from '../data/companion.types';
 import type { Rarity } from '../data/rarity';
 import type { LootOption } from '../engine/loot';
 
@@ -14,6 +15,21 @@ export interface OwnedRelicDisplay {
 }
 
 export type EquippedDisplay = Record<EquipmentSlot, { name: string; rarity: Rarity } | null>;
+
+export interface CompanionDisplay {
+  id: string;
+  name: string;
+  role: CompanionRole;
+  hp: number;
+  maxHp: number;
+}
+
+export interface OwnedSpellDisplay {
+  id: string;
+  name: string;
+  rarity: Rarity;
+  count: number;
+}
 
 export interface RunSnapshot {
   waveNumber: number;
@@ -30,6 +46,9 @@ export interface RunSnapshot {
   gold: number;
   ownedRelics: OwnedRelicDisplay[];
   equipped: EquippedDisplay;
+  companions: CompanionDisplay[];
+  activeSpells: OwnedSpellDisplay[];
+  passiveSpells: OwnedSpellDisplay[];
   isChoosingLoot: boolean;
   lootOptions: LootOption[];
 }
@@ -61,6 +80,9 @@ const initialSnapshot: RunSnapshot = {
   gold: 0,
   ownedRelics: [],
   equipped: { weapon: null, armor: null, accessory: null },
+  companions: [],
+  activeSpells: [],
+  passiveSpells: [],
   isChoosingLoot: false,
   lootOptions: [],
 };

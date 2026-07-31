@@ -171,6 +171,16 @@ body {
   white-space: nowrap;
 }
 
+.companion-chip {
+  background: #17171d;
+  border: 1px solid #2a2b33;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
 .loot-overlay {
   position: absolute;
   inset: 0;
