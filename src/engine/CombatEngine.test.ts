@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CombatEngine } from './CombatEngine';
+import { NEUTRAL_MODIFIERS, type AggregatedModifiers } from './modifiers';
 import type { Combatant } from './types';
+
+function makeModifiers(overrides: Partial<AggregatedModifiers>): AggregatedModifiers {
+  return { ...NEUTRAL_MODIFIERS, ...overrides };
+}
 
 function makeHero(overrides: Partial<Combatant> = {}): Combatant {
   return {
@@ -91,5 +96,77 @@ describe('CombatEngine', () => {
 
     expect(events).toEqual([]);
     expect(engine.getState()).toEqual(snapshotAfterEnd);
+  });
+});
+
+describe('CombatEngine with hero modifiers', () => {
+  it('never crits or burns when hero modifiers are neutral (baseline stays deterministic)', () => {
+    const engine = new CombatEngine(makeHero(), makeMonster(), 1, NEUTRAL_MODIFIERS);
+    const events = engine.tick(1000);
+
+    expect(events).toEqual([
+      { type: 'attack', attackerId: 'hero', targetId: 'goblin_grunt', damage: 5, targetHpAfter: 25 },
+    ]);
+  });
+
+  it('always crits when critChance is 1, applying the crit multiplier and a critHit event', () => {
+    const mods = makeModifiers({ critChanceSum: 1 });
+    const engine = new CombatEngine(makeHero({ attack: 10 }), makeMonster({ maxHp: 100 }), 1, mods);
+
+    const events = engine.tick(1000);
+
+    expect(events.some((e) => e.type === 'critHit')).toBe(true);
+    const attackEvent = events.find((e) => e.type === 'attack');
+    expect(attackEvent).toMatchObject({ damage: 15 }); // 10 * BASE_CRIT_MULTIPLIER (1.5)
+  });
+
+  it('procs burn for bonus damage and emits a statusProc event when burnChance is 1', () => {
+    const mods = makeModifiers({ burnChanceSum: 1 });
+    const engine = new CombatEngine(makeHero({ attack: 10 }), makeMonster({ maxHp: 100 }), 1, mods);
+
+    const events = engine.tick(1000);
+
+    const burnEvent = events.find((e) => e.type === 'statusProc');
+    expect(burnEvent).toMatchObject({ type: 'statusProc', kind: 'burn', damage: 4 }); // 10 * BASE_BURN_RATIO (0.4)
+    const attackEvent = events.find((e) => e.type === 'attack');
+    expect(attackEvent).toMatchObject({ damage: 14 }); // base 10 + burn 4
+  });
+
+  it('heals the hero via lifesteal proportional to damage dealt', () => {
+    const mods = makeModifiers({ lifestealPercentSum: 0.5 });
+    const engine = new CombatEngine(makeHero({ attack: 10, hp: 10, maxHp: 20 }), makeMonster({ maxHp: 100 }), 1, mods);
+
+    const events = engine.tick(1000);
+
+    expect(events.some((e) => e.type === 'lifesteal')).toBe(true);
+    expect(engine.getState().hero.hp).toBe(15); // healed by 50% of 10 damage dealt
+  });
+
+  it('executes enemies below the hp threshold instantly', () => {
+    const mods = makeModifiers({ executeThresholdSum: 0.5 });
+    const engine = new CombatEngine(makeHero({ attack: 1 }), makeMonster({ maxHp: 100, hp: 40 }), 1, mods);
+
+    const events = engine.tick(1000);
+
+    expect(events.some((e) => e.type === 'execute')).toBe(true);
+    expect(engine.getState().monster.hp).toBe(0);
+    expect(engine.getState().isOver).toBe(true);
+    expect(engine.getState().winnerId).toBe('hero');
+  });
+
+  it('reflects damage back at the monster when the hero has reflect and the monster attacks', () => {
+    const mods = makeModifiers({ reflectDamagePercentSum: 0.5 });
+    const engine = new CombatEngine(
+      makeHero({ nextAttackAt: 999_999 }),
+      makeMonster({ attack: 10, maxHp: 100, hp: 100 }),
+      1,
+      mods,
+    );
+
+    const events = engine.tick(1200);
+
+    const reflectEvent = events.find((e) => e.type === 'reflect');
+    expect(reflectEvent).toMatchObject({ damagedId: 'goblin_grunt', damage: 5 });
+    expect(engine.getState().monster.hp).toBe(95);
   });
 });
