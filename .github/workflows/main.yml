@@ -1,14 +1,21 @@
 name: Build and publish Pages
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 on:
   push:
     branches:
-      - 'claude/knights-gauntlet-idle-rpg-0aiorv' # change if your default branch differs
+      - 'claude/knights-gauntlet-idle-rpg-0aiorv'
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -16,7 +23,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -25,10 +32,21 @@ jobs:
       - name: Build production
         run: npm run build
 
-      - name: Deploy to gh-pages
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: Show dist contents
+        run: |
+          if [ -d "dist" ]; then ls -la dist || true; else echo "dist not found"; fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v1
         with:
-          branch: gh-pages       # the branch the action will push to
-          folder: dist           # the folder to publish
-          clean: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          path: ./dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v1
