@@ -1,32 +1,36 @@
-# React + TypeScript + Vite
+# Knight's Gauntlet
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+An idle-RPG roguelike: a knight fights infinite waves automatically while you make the real decisions between waves — relics, equipment, companions, and spells that combine into increasingly absurd builds, plus a HUB with permanent talent/forge/companion progression across runs.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Vite + React + TypeScript** — HUB, HUD, loot popups, all menus.
+- **Phaser 4** — the combat scene (sprites, HP bars, tweened flavor text).
+- **Zustand** — `runStore` (per-run HUD snapshot) and `metaStore` (persistent HUB state), kept strictly separate.
+- **idb-keyval** — local persistence for meta-progression (currency, talents, forge, discoveries).
+- **Vitest** — unit tests for the combat/loot/progression logic in `src/engine`.
 
-## React Compiler
+## Running it
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run test     # Vitest
+npm run build    # production build to dist/
+npm run lint     # oxlint
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Project structure
+
+```
+src/
+  engine/   pure combat/wave/loot/progression logic (no Phaser or React deps, fully unit-tested)
+  data/     typed content: monsters, relics, equipment, companions, spells, talents
+  scenes/   Phaser CombatScene
+  ui/       React components: Hub, HUD, loot popup
+  store/    runStore (per-run) and metaStore (persistent), strictly separated
+scripts/asset-gen/   AI image generation pipeline (AI Horde + Pollinations.ai fallback)
+DESIGN_NOTES.md      running log of game-design and architecture decisions, phase by phase
+```
+
+See `DESIGN_NOTES.md` for the full history of design decisions across each development phase.

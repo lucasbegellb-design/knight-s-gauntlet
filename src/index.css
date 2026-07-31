@@ -227,6 +227,34 @@ body {
   transform: translateY(-4px);
 }
 
+.loot-card-legendary {
+  animation: legendary-pulse 1.8s ease-in-out infinite;
+}
+
+.loot-card-mythic {
+  border-image: linear-gradient(90deg, #ff3b6b, #f1c40f, #2ecc71, #3498db, #9b59b6, #ff3b6b) 1;
+  animation: mythic-shimmer 3s linear infinite;
+}
+
+@keyframes legendary-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 18px #f5a62366;
+  }
+  50% {
+    box-shadow: 0 0 30px #f5a623cc;
+  }
+}
+
+@keyframes mythic-shimmer {
+  0% {
+    filter: hue-rotate(0deg);
+  }
+  100% {
+    filter: hue-rotate(360deg);
+  }
+}
+
 .loot-card-rarity {
   font-size: 11px;
   font-weight: 700;

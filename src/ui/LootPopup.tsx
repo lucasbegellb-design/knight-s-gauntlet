@@ -47,11 +47,12 @@ export function LootPopup() {
         {lootOptions.map((option, index) => {
           const info = describeOption(option);
           const color = RARITY_COLOR[info.rarity];
+          const rarityClass = info.rarity === 'mythic' ? ' loot-card-mythic' : info.rarity === 'legendary' ? ' loot-card-legendary' : '';
           return (
             <button
               key={index}
               type="button"
-              className="loot-card"
+              className={`loot-card${rarityClass}`}
               style={{ borderColor: color, boxShadow: `0 0 18px ${color}66` }}
               onClick={() => requestLootChoice(index)}
             >
