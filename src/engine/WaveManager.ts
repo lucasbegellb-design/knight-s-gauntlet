@@ -7,6 +7,9 @@ import type { HeroBaseStats, HeroDefinition } from '../data/hero.types';
 import type { MonsterDefinition, MonsterTier } from '../data/monster.types';
 import { bosses, miniBosses, normalMonsters } from '../data/monsters';
 
+/** Fraction of missing HP recovered on each wave clear, on top of any maxHp gained from leveling. */
+const WAVE_CLEAR_HEAL_FRACTION = 0.3;
+
 export interface RunState {
   waveNumber: number;
   heroProgress: HeroProgress;
@@ -107,7 +110,13 @@ export class WaveManager {
     this.state.heroProgress = progress;
 
     const hpDelta = newStats.maxHp - previousStats.maxHp;
-    const carriedHp = Math.min(newStats.maxHp, Math.max(0, this.engine.getState().hero.hp + hpDelta));
+    const hpAfterGrowth = Math.min(newStats.maxHp, Math.max(0, this.engine.getState().hero.hp + hpDelta));
+    // Small between-wave recovery so the run doesn't hinge entirely on chip damage taken earlier;
+    // full healing is intentionally avoided to keep hp carrying real stakes across the run.
+    const carriedHp = Math.min(
+      newStats.maxHp,
+      hpAfterGrowth + Math.round((newStats.maxHp - hpAfterGrowth) * WAVE_CLEAR_HEAL_FRACTION),
+    );
 
     if (levelsGained > 0) {
       events.push({ type: 'levelUp', newLevel: progress.level });

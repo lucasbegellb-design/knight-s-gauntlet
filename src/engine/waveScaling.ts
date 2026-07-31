@@ -12,8 +12,8 @@ export function tierForWave(wave: number): MonsterTier {
 
 /** Controlled, mildly compounding difficulty curve applied on top of a monster's base stats. */
 export function scaledMonsterStats(def: MonsterDefinition, wave: number): { maxHp: number; attack: number } {
-  const hpMultiplier = 1 + wave * 0.15;
-  const attackMultiplier = 1 + wave * 0.1;
+  const hpMultiplier = 1 + wave * 0.1;
+  const attackMultiplier = 1 + wave * 0.06;
 
   return {
     maxHp: Math.round(def.maxHp * hpMultiplier),
