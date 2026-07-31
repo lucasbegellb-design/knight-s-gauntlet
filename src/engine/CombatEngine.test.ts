@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CombatEngine } from './CombatEngine';
 import { NEUTRAL_MODIFIERS, type AggregatedModifiers } from './modifiers';
-import type { Combatant } from './types';
+import type { AllyUnit, Combatant, SpellCaster } from './types';
 
 function makeModifiers(overrides: Partial<AggregatedModifiers>): AggregatedModifiers {
   return { ...NEUTRAL_MODIFIERS, ...overrides };
@@ -168,5 +168,190 @@ describe('CombatEngine with hero modifiers', () => {
     const reflectEvent = events.find((e) => e.type === 'reflect');
     expect(reflectEvent).toMatchObject({ damagedId: 'goblin_grunt', damage: 5 });
     expect(engine.getState().monster.hp).toBe(95);
+  });
+});
+
+function makeAlly(overrides: Partial<AllyUnit> = {}): AllyUnit {
+  return {
+    combatant: { id: 'ally', name: 'Ally', maxHp: 20, hp: 20, attack: 3, attackIntervalMs: 1000, nextAttackAt: 1000 },
+    role: 'dps',
+    actsIndependently: true,
+    tauntWeight: 1,
+    healAmount: 0,
+    doubleStrikeChance: 0,
+    ...overrides,
+  };
+}
+
+function makeSpell(overrides: Partial<SpellCaster> = {}): SpellCaster {
+  return { id: 'spell', name: 'Spell', cooldownMs: 1000, nextCastAt: 1000, effect: 'damage', power: 5, ...overrides };
+}
+
+describe('CombatEngine with allies', () => {
+  it('lets a dps ally attack the monster on its own timer', () => {
+    const ally = makeAlly();
+    const engine = new CombatEngine(
+      makeHero({ nextAttackAt: 999_999 }),
+      makeMonster({ maxHp: 100, hp: 100 }),
+      1,
+      NEUTRAL_MODIFIERS,
+      [ally],
+    );
+
+    const events = engine.tick(1000);
+
+    const allyAttack = events.find((e) => e.type === 'attack' && e.attackerId === 'ally');
+    expect(allyAttack).toMatchObject({ damage: 3 });
+    expect(engine.getState().monster.hp).toBe(97);
+  });
+
+  it('lets a healer ally heal the lowest-hp ally instead of attacking the monster', () => {
+    const healer = makeAlly({
+      role: 'healer',
+      healAmount: 10,
+      combatant: { id: 'healer', name: 'Healer', maxHp: 20, hp: 20, attack: 0, attackIntervalMs: 1000, nextAttackAt: 1000 },
+    });
+    const engine = new CombatEngine(
+      makeHero({ hp: 5, maxHp: 20, nextAttackAt: 999_999 }),
+      makeMonster({ nextAttackAt: 999_999 }),
+      1,
+      NEUTRAL_MODIFIERS,
+      [healer],
+    );
+
+    const events = engine.tick(1000);
+
+    expect(events.some((e) => e.type === 'companionHeal' && e.targetId === 'hero')).toBe(true);
+    expect(engine.getState().hero.hp).toBe(15);
+    expect(engine.getState().monster.hp).toBe(30);
+  });
+
+  it('never lets a support-flagged ally take a turn even if its timer would fire', () => {
+    const support = makeAlly({
+      role: 'support',
+      actsIndependently: false,
+      combatant: { id: 'support', name: 'Bard', maxHp: 20, hp: 20, attack: 99, attackIntervalMs: 1, nextAttackAt: 1 },
+    });
+    const engine = new CombatEngine(
+      makeHero({ nextAttackAt: 999_999 }),
+      makeMonster({ maxHp: 100, hp: 100, nextAttackAt: 999_999 }),
+      1,
+      NEUTRAL_MODIFIERS,
+      [support],
+    );
+
+    const events = engine.tick(5000);
+
+    expect(events.filter((e) => e.type === 'attack' && e.attackerId === 'support')).toHaveLength(0);
+    expect(engine.getState().monster.hp).toBe(100);
+  });
+
+  it('does not end combat when a companion dies, only when hero or monster dies', () => {
+    const fragileAlly = makeAlly({
+      tauntWeight: 1000,
+      combatant: { id: 'fragile', name: 'Fragile', maxHp: 5, hp: 5, attack: 1, attackIntervalMs: 999_999, nextAttackAt: 999_999 },
+    });
+    const engine = new CombatEngine(
+      makeHero({ nextAttackAt: 999_999 }),
+      makeMonster({ attack: 50, nextAttackAt: 1000 }),
+      1,
+      NEUTRAL_MODIFIERS,
+      [fragileAlly],
+    );
+
+    const events = engine.tick(1000);
+
+    expect(events.some((e) => e.type === 'death' && e.combatantId === 'fragile')).toBe(true);
+    expect(events.some((e) => e.type === 'combatEnd')).toBe(false);
+    expect(engine.getState().isOver).toBe(false);
+  });
+
+  it('lets the monster kill the hero even with allies present, ending combat in its favor', () => {
+    const ally = makeAlly({
+      tauntWeight: 0,
+      combatant: { id: 'ally', name: 'Ally', maxHp: 100, hp: 100, attack: 0, attackIntervalMs: 999_999, nextAttackAt: 999_999 },
+    });
+    const engine = new CombatEngine(
+      makeHero({ hp: 1, maxHp: 1, nextAttackAt: 999_999 }),
+      makeMonster({ attack: 50, nextAttackAt: 1000 }),
+      1,
+      NEUTRAL_MODIFIERS,
+      [ally],
+    );
+
+    const events = engine.tick(1000);
+
+    expect(events.map((e) => e.type)).toEqual(['attack', 'death', 'combatEnd']);
+    expect(engine.getState().winnerId).toBe('goblin_grunt');
+  });
+
+  it('favors high taunt-weight allies (e.g. tanks) over the hero across many seeds', () => {
+    let heroHits = 0;
+    let tankHits = 0;
+    for (let seed = 1; seed <= 100; seed++) {
+      const tank = makeAlly({
+        tauntWeight: 4,
+        combatant: { id: 'tank', name: 'Tank', maxHp: 1000, hp: 1000, attack: 0, attackIntervalMs: 999_999, nextAttackAt: 999_999 },
+      });
+      const engine = new CombatEngine(
+        makeHero({ hp: 1000, maxHp: 1000, nextAttackAt: 999_999 }),
+        makeMonster({ attack: 1, nextAttackAt: 1000 }),
+        seed,
+        NEUTRAL_MODIFIERS,
+        [tank],
+      );
+      const events = engine.tick(1000);
+      const atk = events.find((e) => e.type === 'attack');
+      if (atk && atk.type === 'attack') {
+        if (atk.targetId === 'hero') heroHits++;
+        if (atk.targetId === 'tank') tankHits++;
+      }
+    }
+    expect(tankHits).toBeGreaterThan(heroHits);
+  });
+});
+
+describe('CombatEngine with active spell casters', () => {
+  it('lets an active damage spell hit the monster on its own cooldown', () => {
+    const spell = makeSpell({ effect: 'damage', power: 7 });
+    const engine = new CombatEngine(makeHero({ nextAttackAt: 999_999 }), makeMonster({ maxHp: 100, hp: 100 }), 1, NEUTRAL_MODIFIERS, [], [
+      spell,
+    ]);
+
+    const events = engine.tick(1000);
+
+    const cast = events.find((e) => e.type === 'spellCast');
+    expect(cast).toMatchObject({ spellId: 'spell', effect: 'damage', amount: 7 });
+    expect(engine.getState().monster.hp).toBe(93);
+  });
+
+  it('lets an active heal spell restore the hero without touching the monster', () => {
+    const spell = makeSpell({ effect: 'heal', power: 8 });
+    const engine = new CombatEngine(
+      makeHero({ hp: 5, maxHp: 20, nextAttackAt: 999_999 }),
+      makeMonster({ nextAttackAt: 999_999 }),
+      1,
+      NEUTRAL_MODIFIERS,
+      [],
+      [spell],
+    );
+
+    const events = engine.tick(1000);
+
+    expect(events.some((e) => e.type === 'spellCast' && e.effect === 'heal')).toBe(true);
+    expect(engine.getState().hero.hp).toBe(13);
+    expect(engine.getState().monster.hp).toBe(30);
+  });
+
+  it('ends combat in the heros favor if a spell lands the killing blow', () => {
+    const spell = makeSpell({ effect: 'damage', power: 100 });
+    const engine = new CombatEngine(makeHero({ nextAttackAt: 999_999 }), makeMonster({ maxHp: 30, hp: 30 }), 1, NEUTRAL_MODIFIERS, [], [
+      spell,
+    ]);
+
+    const events = engine.tick(1000);
+
+    expect(events.map((e) => e.type)).toEqual(['spellCast', 'death', 'combatEnd']);
+    expect(engine.getState().winnerId).toBe('hero');
   });
 });
