@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { WaveManager } from './WaveManager';
+import { WaveManager, type RunState } from './WaveManager';
 import type { HeroDefinition } from '../data/hero.types';
 import { BOSS_WAVE_INTERVAL, MINIBOSS_WAVE_INTERVAL } from './waveScaling';
 import { relicRegistry } from '../data/relics';
+
+function stateOf(manager: WaveManager): RunState {
+  return (manager as unknown as { state: RunState }).state;
+}
 
 const testHero: HeroDefinition = {
   id: 'hero',
@@ -178,9 +182,7 @@ describe('WaveManager', () => {
     };
     const manager = new WaveManager(weakHero, 1);
     // Grant Phoenix Heart directly for the test rather than relying on RNG loot luck.
-    (manager as unknown as { state: { ownedRelics: { id: string; count: number }[] } }).state.ownedRelics = [
-      { id: 'phoenix_heart', count: 1 },
-    ];
+    stateOf(manager).ownedRelics = [{ id: 'phoenix_heart', count: 1 }];
     expect(relicRegistry.get('phoenix_heart').special).toBe('phoenixRevive');
 
     const firstDeath = manager.tick(200_000);
@@ -192,5 +194,91 @@ describe('WaveManager', () => {
     const secondDeath = manager.tick(200_000);
     expect(secondDeath.some((e) => e.type === 'runOver')).toBe(true);
     expect(manager.getRunState().isGameOver).toBe(true);
+  });
+
+  it('recruits a companion into the roster and fields it as an ally in combat', () => {
+    const manager = new WaveManager(testHero, 1);
+    let recruited = false;
+
+    for (let attempt = 0; attempt < 40 && !recruited; attempt++) {
+      for (let i = 0; i < 50 && !manager.getRunState().isChoosingLoot; i++) manager.tick(200);
+      const options = manager.getRunState().lootOptions;
+      const index = options.findIndex((o) => o.kind === 'companion');
+      if (index >= 0) {
+        manager.chooseLoot(index);
+        recruited = true;
+      } else {
+        manager.chooseLoot(0);
+      }
+    }
+
+    expect(recruited).toBe(true);
+    expect(manager.getRunState().companions).toHaveLength(1);
+    expect(manager.getCombatState().allies).toHaveLength(1);
+  });
+
+  it('keeps a companion that reaches 0 hp out of combat for the rest of the run', () => {
+    const manager = new WaveManager(testHero, 1);
+    stateOf(manager).companions = [{ id: 'stalwart_guardian', hp: 0 }];
+
+    advanceOneWave(manager);
+
+    expect(manager.getRunState().companions).toEqual([{ id: 'stalwart_guardian', hp: 0 }]);
+    expect(manager.getCombatState().allies.some((a) => a.combatant.id === 'stalwart_guardian')).toBe(false);
+  });
+
+  it('adds a passive spell to passiveSpells when chosen from loot', () => {
+    const manager = new WaveManager(testHero, 6);
+    let learned = false;
+
+    for (let attempt = 0; attempt < 40 && !learned; attempt++) {
+      for (let i = 0; i < 50 && !manager.getRunState().isChoosingLoot; i++) manager.tick(200);
+      const options = manager.getRunState().lootOptions;
+      const index = options.findIndex((o) => o.kind === 'spell' && o.spell.kind === 'passive');
+      if (index >= 0) {
+        manager.chooseLoot(index);
+        learned = true;
+      } else {
+        manager.chooseLoot(0);
+      }
+    }
+
+    expect(learned).toBe(true);
+    expect(manager.getRunState().passiveSpells.length).toBeGreaterThan(0);
+  });
+
+  it('casts an owned active spell automatically once recruited', () => {
+    const spellHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 10_000, attack: 50, attackIntervalMs: 5000 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(spellHero, 21);
+    let recruitedActiveSpellId: string | null = null;
+
+    for (let attempt = 0; attempt < 40 && !recruitedActiveSpellId; attempt++) {
+      for (let i = 0; i < 50 && !manager.getRunState().isChoosingLoot; i++) manager.tick(200);
+      if (!manager.getRunState().isChoosingLoot) break;
+      const options = manager.getRunState().lootOptions;
+      const index = options.findIndex((o) => o.kind === 'spell' && o.spell.kind === 'active');
+      if (index >= 0) {
+        const option = options[index];
+        manager.chooseLoot(index);
+        if (option?.kind === 'spell') recruitedActiveSpellId = option.spell.id;
+      } else {
+        manager.chooseLoot(0);
+      }
+    }
+
+    expect(recruitedActiveSpellId).not.toBeNull();
+    expect(manager.getRunState().activeSpells.map((s) => s.id)).toContain(recruitedActiveSpellId);
+
+    let sawSpellCast = false;
+    for (let i = 0; i < 50 && !sawSpellCast; i++) {
+      const events = manager.getRunState().isChoosingLoot ? manager.chooseLoot(0) : manager.tick(200);
+      if (events.some((e) => e.type === 'combat' && e.event.type === 'spellCast')) sawSpellCast = true;
+    }
+    expect(sawSpellCast).toBe(true);
   });
 });

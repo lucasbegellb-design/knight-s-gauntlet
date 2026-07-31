@@ -14,6 +14,22 @@ function describeOption(option: LootOption): { name: string; description: string
       kindLabel: 'Equipment',
     };
   }
+  if (option.kind === 'companion') {
+    return {
+      name: option.companion.name,
+      description: option.companion.description,
+      rarity: option.rarity,
+      kindLabel: `Companion (${option.companion.role})`,
+    };
+  }
+  if (option.kind === 'spell') {
+    return {
+      name: option.spell.name,
+      description: option.spell.description,
+      rarity: option.rarity,
+      kindLabel: option.spell.kind === 'active' ? 'Active Spell' : 'Passive Spell',
+    };
+  }
   return { name: 'Gold', description: `Gain ${option.amount} gold.`, rarity: 'common', kindLabel: 'Gold' };
 }
 

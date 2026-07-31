@@ -3,20 +3,25 @@ import { Rng } from './rng';
 import { applyXpGain, statsForLevel, type HeroProgress } from './heroProgression';
 import { scaledMonsterStats, tierForWave } from './waveScaling';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
-import { generateLootOptions, type LootOption } from './loot';
-import type { Combatant, CombatEvent, CombatState } from './types';
+import { generateLootOptions, type LootContext, type LootOption } from './loot';
+import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from './types';
 import type { HeroDefinition } from '../data/hero.types';
 import type { MonsterDefinition, MonsterTier } from '../data/monster.types';
 import type { EquipmentSlot } from '../data/equipment.types';
 import { bosses, miniBosses, normalMonsters } from '../data/monsters';
 import { relicRegistry } from '../data/relics';
 import { equipmentRegistry } from '../data/equipment';
+import { companionRegistry } from '../data/companions';
+import { spellRegistry } from '../data/spells';
 import { RARITY_POWER_MULTIPLIER, type Rarity } from '../data/rarity';
+import type { RelicModifier } from '../data/relic.types';
 
 /** Fraction of missing HP recovered on each wave clear, on top of any relic-granted regen. */
 const WAVE_CLEAR_HEAL_FRACTION = 0.3;
 const PHOENIX_HEART_ID = 'phoenix_heart';
 const PHOENIX_REVIVE_HP_FRACTION = 0.5;
+export const MAX_ACTIVE_COMPANIONS = 3;
+export const MAX_ACTIVE_SPELLS = 2;
 
 export interface OwnedRelic {
   id: string;
@@ -30,6 +35,17 @@ export interface EquippedItem {
 
 export type EquippedItems = Record<EquipmentSlot, EquippedItem | null>;
 
+export interface OwnedCompanion {
+  id: string;
+  /** Current HP carried between waves; 0 means permanently fallen for the rest of this run. */
+  hp: number;
+}
+
+export interface OwnedSpell {
+  id: string;
+  count: number;
+}
+
 export interface RunState {
   waveNumber: number;
   heroProgress: HeroProgress;
@@ -39,6 +55,9 @@ export interface RunState {
   gold: number;
   ownedRelics: OwnedRelic[];
   equipped: EquippedItems;
+  companions: OwnedCompanion[];
+  activeSpells: OwnedSpell[];
+  passiveSpells: OwnedSpell[];
   isChoosingLoot: boolean;
   lootOptions: LootOption[];
   hasUsedPhoenixRevive: boolean;
@@ -71,12 +90,13 @@ function buildCombatant(id: string, name: string, hp: number, maxHp: number, att
 }
 
 /**
- * Sequences an infinite run of hero-vs-monster fights: spawns the next wave
- * after each CombatEngine concludes, awards XP, rolls hero level-ups, offers
- * a loot choice (relic / equipment / gold) between waves, and escalates
- * monster stats/tier as the wave count climbs. Pure logic, no rendering
- * dependency — a Phaser scene (or anything else) only reads
- * `getRunState()`/`getCombatState()` and reacts to `tick()`/`chooseLoot()`'s events.
+ * Sequences an infinite run of hero-(+allies)-vs-monster fights: spawns the
+ * next wave after each CombatEngine concludes, awards XP, rolls hero
+ * level-ups, offers a loot choice (relic / equipment / companion / spell /
+ * gold) between waves, and escalates monster stats/tier as the wave count
+ * climbs. Pure logic, no rendering dependency — a Phaser scene (or anything
+ * else) only reads `getRunState()`/`getCombatState()` and reacts to
+ * `tick()`/`chooseLoot()`'s events.
  */
 export class WaveManager {
   private readonly heroDef: HeroDefinition;
@@ -86,6 +106,8 @@ export class WaveManager {
   private engine: CombatEngine;
   /** Hero HP carried from the moment a wave ended into the next wave's construction (post loot choice). */
   private pendingHeroHp = 0;
+  /** Companion HP carried the same way, keyed by companion id. */
+  private pendingCompanionHp = new Map<string, number>();
 
   constructor(heroDef: HeroDefinition, seed = 1) {
     this.heroDef = heroDef;
@@ -100,6 +122,9 @@ export class WaveManager {
       gold: 0,
       ownedRelics: [],
       equipped: { weapon: null, armor: null, accessory: null },
+      companions: [],
+      activeSpells: [],
+      passiveSpells: [],
       isChoosingLoot: false,
       lootOptions: [],
       hasUsedPhoenixRevive: false,
@@ -172,8 +197,20 @@ export class WaveManager {
     }
 
     this.pendingHeroHp = this.engine.getState().hero.hp;
+    this.pendingCompanionHp = new Map(this.engine.getState().allies.map((ally) => [ally.combatant.id, ally.combatant.hp]));
+
     this.state.isChoosingLoot = true;
-    this.state.lootOptions = generateLootOptions(this.rng, this.ownedRelicIdMap(), clearedWave + 1, modifiers.goldMultiplierSum);
+    const context: LootContext = {
+      ownedRelicIds: this.ownedIdCountMap(this.state.ownedRelics),
+      ownedCompanionIds: new Set(this.state.companions.map((c) => c.id)),
+      companionRosterFull: this.state.companions.length >= MAX_ACTIVE_COMPANIONS,
+      ownedActiveSpellIds: new Set(this.state.activeSpells.map((s) => s.id)),
+      activeSpellSlotsFull: this.state.activeSpells.length >= MAX_ACTIVE_SPELLS,
+      ownedPassiveSpellIds: this.ownedIdCountMap(this.state.passiveSpells),
+      waveNumber: clearedWave + 1,
+      goldMultiplier: modifiers.goldMultiplierSum,
+    };
+    this.state.lootOptions = generateLootOptions(this.rng, context);
     events.push({ type: 'lootOffered', options: this.state.lootOptions });
   }
 
@@ -181,9 +218,7 @@ export class WaveManager {
     if (option.kind === 'relic') {
       const existing = this.state.ownedRelics.find((owned) => owned.id === option.relic.id);
       if (existing) {
-        if (option.relic.stacking === 'stackable') {
-          existing.count += 1;
-        }
+        if (option.relic.stacking === 'stackable') existing.count += 1;
       } else {
         this.state.ownedRelics = [...this.state.ownedRelics, { id: option.relic.id, count: 1 }];
       }
@@ -192,6 +227,19 @@ export class WaveManager {
         ...this.state.equipped,
         [option.equipment.slot]: { defId: option.equipment.id, rarity: option.rarity },
       };
+    } else if (option.kind === 'companion') {
+      this.state.companions = [...this.state.companions, { id: option.companion.id, hp: option.companion.maxHp }];
+    } else if (option.kind === 'spell') {
+      if (option.spell.kind === 'active') {
+        this.state.activeSpells = [...this.state.activeSpells, { id: option.spell.id, count: 1 }];
+      } else {
+        const existing = this.state.passiveSpells.find((owned) => owned.id === option.spell.id);
+        if (existing) {
+          if (option.spell.stacking === 'stackable') existing.count += 1;
+        } else {
+          this.state.passiveSpells = [...this.state.passiveSpells, { id: option.spell.id, count: 1 }];
+        }
+      }
     } else {
       this.state.gold += option.amount;
     }
@@ -220,8 +268,10 @@ export class WaveManager {
       currentMonster.attackIntervalMs,
     );
 
+    const { allies, spellCasters } = this.buildAlliesAndSpells(modifiers);
+
     this.seed += 1;
-    this.engine = new CombatEngine(hero, monster, this.seed, modifiers);
+    this.engine = new CombatEngine(hero, monster, this.seed, modifiers, allies, spellCasters);
     events.push({ type: 'revived' });
     return true;
   }
@@ -239,8 +289,8 @@ export class WaveManager {
     return found;
   }
 
-  private ownedRelicIdMap(): Map<string, number> {
-    return new Map(this.state.ownedRelics.map((owned) => [owned.id, owned.count]));
+  private ownedIdCountMap(owned: { id: string; count: number }[]): Map<string, number> {
+    return new Map(owned.map((entry) => [entry.id, entry.count]));
   }
 
   private computeModifiers(): AggregatedModifiers {
@@ -257,7 +307,58 @@ export class WaveManager {
         return { modifiers: [{ kind: def.modifier.kind, value: scaledValue }], count: 1 };
       });
 
-    return aggregateModifiers([...relicSources, ...equipmentSources]);
+    const passiveSpellSources: ModifierSource[] = this.state.passiveSpells.map((owned) => {
+      const def = spellRegistry.get(owned.id);
+      const modifiers = def.kind === 'passive' ? def.modifiers : [];
+      return { modifiers, count: owned.count };
+    });
+
+    const companionAuraSources: ModifierSource[] = this.state.companions
+      .filter((owned) => owned.hp > 0)
+      .map((owned) => companionRegistry.get(owned.id))
+      .filter((def) => def.role === 'support' && def.auraModifier)
+      .map((def) => ({ modifiers: [def.auraModifier as RelicModifier], count: 1 }));
+
+    return aggregateModifiers([...relicSources, ...equipmentSources, ...passiveSpellSources, ...companionAuraSources]);
+  }
+
+  /** Builds this wave's AllyUnit/SpellCaster arrays from the owned roster, applying wave-clear healing per companion. */
+  private buildAlliesAndSpells(modifiers: AggregatedModifiers): { allies: AllyUnit[]; spellCasters: SpellCaster[] } {
+    const healFraction = WAVE_CLEAR_HEAL_FRACTION + modifiers.regenPerWaveSum;
+    const allies: AllyUnit[] = [];
+
+    for (const owned of this.state.companions) {
+      const def = companionRegistry.get(owned.id);
+      const carried = this.pendingCompanionHp.get(owned.id) ?? owned.hp;
+
+      let finalHp = 0;
+      if (carried > 0) {
+        const beforeHeal = Math.min(def.maxHp, carried);
+        finalHp = Math.min(def.maxHp, beforeHeal + Math.round((def.maxHp - beforeHeal) * healFraction));
+      }
+      owned.hp = finalHp;
+      if (finalHp <= 0) continue;
+
+      const combatant = buildCombatant(def.id, def.name, finalHp, def.maxHp, def.attack, def.attackIntervalMs);
+      allies.push({
+        combatant,
+        role: def.role,
+        actsIndependently: def.role !== 'support',
+        tauntWeight: def.role === 'tank' ? 4 : 1,
+        healAmount: def.healAmount ?? 0,
+        doubleStrikeChance: def.doubleStrikeChance ?? 0,
+      });
+    }
+
+    const spellCasters: SpellCaster[] = this.state.activeSpells.map((owned) => {
+      const def = spellRegistry.get(owned.id);
+      if (def.kind !== 'active') {
+        throw new Error(`Expected active spell, got passive: ${owned.id}`);
+      }
+      return { id: def.id, name: def.name, cooldownMs: def.cooldownMs, nextCastAt: def.cooldownMs, effect: def.effect, power: def.power };
+    });
+
+    return { allies, spellCasters };
   }
 
   private buildWaveEngine(waveNumber: number, carriedHeroHp?: number): CombatEngine {
@@ -285,8 +386,9 @@ export class WaveManager {
     }
 
     const hero = buildCombatant(this.heroDef.id, this.heroDef.name, heroHp, maxHp, levelStats.attack, attackIntervalMs);
+    const { allies, spellCasters } = this.buildAlliesAndSpells(modifiers);
 
     this.seed += 1;
-    return new CombatEngine(hero, monster, this.seed, modifiers);
+    return new CombatEngine(hero, monster, this.seed, modifiers, allies, spellCasters);
   }
 }
