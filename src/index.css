@@ -776,3 +776,135 @@ body {
   color: var(--text-faint);
   font-style: italic;
 }
+
+/* --- Gacha --- */
+
+.gacha-summon-card {
+  gap: 14px;
+}
+
+.gacha-rate-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gacha-rate-chip {
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gacha-pull-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.gacha-pull-button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: 0;
+}
+
+.gacha-pull-button-multi {
+  background: linear-gradient(180deg, var(--arcane-bright), var(--arcane));
+  border-color: var(--arcane);
+  color: #14102a;
+  box-shadow: 0 6px 18px -6px rgba(139, 108, 247, 0.55);
+}
+
+.gacha-pull-cost {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.gacha-roster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 10px;
+}
+
+.gacha-roster-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  background: var(--panel-solid);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 10px 6px;
+}
+
+.gacha-roster-item.locked {
+  opacity: 0.55;
+}
+
+.gacha-roster-silhouette {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-faint);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.gacha-roster-name {
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.gacha-roster-rarity {
+  font-size: 9px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.gacha-reveal-overlay {
+  position: fixed;
+  z-index: 60;
+  border-radius: 0;
+}
+
+.gacha-reveal-cards {
+  max-width: 900px;
+}
+
+.gacha-reveal-card {
+  position: relative;
+  align-items: center;
+  text-align: center;
+}
+
+.gacha-new-badge {
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  background: var(--gold);
+  color: #1d1408;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+}
+
+.gacha-duplicate-tag {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+}

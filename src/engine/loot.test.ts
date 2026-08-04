@@ -9,6 +9,7 @@ function makeContext(overrides: Partial<LootContext> = {}): LootContext {
   return {
     ownedRelicIds: new Map(),
     ownedCompanionIds: new Set(),
+    unlockedCompanionIds: new Set(allCompanions.map((c) => c.id)),
     companionRosterFull: false,
     ownedActiveSpellIds: new Set(),
     activeSpellSlotsFull: false,
@@ -105,6 +106,17 @@ describe('generateLootOptions', () => {
     const owned = new Set(allCompanions.map((c) => c.id));
     const options = generateLootOptions(rng, makeContext({ ownedCompanionIds: owned }));
     expect(options.some((o) => o.kind === 'companion')).toBe(false);
+  });
+
+  it('never offers a companion that has not been unlocked via the gacha', () => {
+    const rng = new Rng(21);
+    for (let i = 0; i < 30; i++) {
+      const options = generateLootOptions(
+        rng,
+        makeContext({ unlockedCompanionIds: new Set(), waveNumber: i + 1 }),
+      );
+      expect(options.some((o) => o.kind === 'companion')).toBe(false);
+    }
   });
 
   it('never offers a new active spell once active slots are full', () => {

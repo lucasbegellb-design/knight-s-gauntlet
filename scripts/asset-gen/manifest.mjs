@@ -24,4 +24,99 @@ export const manifest = [
   { id: 'rarity_epic', category: 'icons', prompt: 'a glowing purple amethyst gemstone icon' },
   { id: 'rarity_legendary', category: 'icons', prompt: 'a glowing golden orange topaz gemstone icon, radiant' },
   { id: 'rarity_mythic', category: 'icons', prompt: 'a glowing rainbow prismatic crystal icon, ethereal, magical' },
+
+  // Gacha companions: each gets two assets — a menu illustration (style: 'illustration') and a
+  // combat pixel-art sprite (style: 'pixelArt', category 'companions' so CombatScene's existing
+  // texture loading picks it up with zero code changes). See generate.mjs for the style suffixes.
+  {
+    id: 'stalwart_guardian',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a stalwart armored guardian knight holding a tower shield, protective stance',
+  },
+  {
+    id: 'stalwart_guardian',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'a stalwart armored guardian knight holding a tower shield, protective stance',
+  },
+  {
+    id: 'roguish_blade',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a quick roguish swordsman in a hood with twin daggers, agile pose',
+  },
+  {
+    id: 'roguish_blade',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'a quick roguish swordsman in a hood with twin daggers, agile pose',
+  },
+  {
+    id: 'arcane_marksman',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'an elegant spellsword archer channeling arcane energy into a glowing bow',
+  },
+  {
+    id: 'arcane_marksman',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'an elegant spellsword archer channeling arcane energy into a glowing bow',
+  },
+  {
+    id: 'wandering_cleric',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a serene traveling cleric in white and gold robes holding a healing staff',
+  },
+  {
+    id: 'wandering_cleric',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'a serene traveling cleric in white and gold robes holding a healing staff',
+  },
+  {
+    id: 'camp_bard',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a charming bard with a lute, mid-performance, energetic pose',
+  },
+  { id: 'camp_bard', category: 'companions', style: 'pixelArt', prompt: 'a charming bard with a lute, mid-performance, energetic pose' },
+  {
+    id: 'ember_wisp',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a small floating spirit wisp made of flickering fire, mischievous glowing eyes',
+  },
+  {
+    id: 'ember_wisp',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'a small floating spirit wisp made of flickering fire, mischievous glowing eyes',
+  },
+  {
+    id: 'crimson_dragoon',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a legendary dragoon in crimson dragon-scale armor wielding a long lance, dramatic heroic pose',
+  },
+  {
+    id: 'crimson_dragoon',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'a legendary dragoon in crimson dragon-scale armor wielding a long lance, dramatic heroic pose',
+  },
+  {
+    id: 'astral_seraph',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a mythic celestial seraph with glowing golden wings and radiant halo, ethereal divine aura',
+  },
+  {
+    id: 'astral_seraph',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'a mythic celestial seraph with glowing golden wings and radiant halo, ethereal divine aura',
+  },
 ];

@@ -19,6 +19,8 @@ export type LootOption =
 export interface LootContext {
   ownedRelicIds: Map<string, number>;
   ownedCompanionIds: Set<string>;
+  /** Companions unlocked via the Gacha (see src/engine/gacha.ts) — only these can appear as loot. */
+  unlockedCompanionIds: Set<string>;
   companionRosterFull: boolean;
   ownedActiveSpellIds: Set<string>;
   activeSpellSlotsFull: boolean;
@@ -104,7 +106,9 @@ function pickEquipmentOption(rng: Rng, excludeIds: Set<string>): EquipmentDefini
 
 function pickCompanionOption(rng: Rng, context: LootContext, excludeIds: Set<string>): CompanionDefinition | undefined {
   if (context.companionRosterFull) return undefined;
-  const candidates = allCompanions.filter((c) => !context.ownedCompanionIds.has(c.id) && !excludeIds.has(c.id));
+  const candidates = allCompanions.filter(
+    (c) => context.unlockedCompanionIds.has(c.id) && !context.ownedCompanionIds.has(c.id) && !excludeIds.has(c.id),
+  );
   return pickFromRarityPool(rng, candidates, context.luckBonus);
 }
 

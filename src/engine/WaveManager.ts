@@ -12,7 +12,7 @@ import type { EquipmentSlot } from '../data/equipment.types';
 import { bosses, miniBosses, normalMonsters } from '../data/monsters';
 import { relicRegistry } from '../data/relics';
 import { equipmentRegistry } from '../data/equipment';
-import { companionRegistry } from '../data/companions';
+import { allCompanions, companionRegistry } from '../data/companions';
 import { spellRegistry } from '../data/spells';
 import { RARITY_POWER_MULTIPLIER, type Rarity } from '../data/rarity';
 import type { RelicModifier } from '../data/relic.types';
@@ -140,6 +140,7 @@ export class WaveManager {
   /** Separate RNG stream for Broken Parts drops so adding/removing that roll never shifts monster-pick or loot-roll sequences elsewhere. */
   private readonly brokenPartsRng: Rng;
   private readonly metaBonuses: MetaBonuses;
+  private readonly unlockedCompanionIds: Set<string>;
   private seed: number;
   private state: RunState;
   private engine: CombatEngine;
@@ -153,12 +154,14 @@ export class WaveManager {
     seed = 1,
     metaBonuses: MetaBonuses = DEFAULT_META_BONUSES,
     startingEquipment: Partial<EquippedItems> = {},
+    unlockedCompanionIds: Iterable<string> = allCompanions.map((c) => c.id),
   ) {
     this.heroDef = heroDef;
     this.rng = new Rng(seed);
     this.brokenPartsRng = new Rng(seed + 90210);
     this.seed = seed;
     this.metaBonuses = metaBonuses;
+    this.unlockedCompanionIds = new Set(unlockedCompanionIds);
     this.state = {
       waveNumber: 0,
       heroProgress: { level: 1, xp: 0 },
@@ -260,6 +263,7 @@ export class WaveManager {
     const context: LootContext = {
       ownedRelicIds: this.ownedIdCountMap(this.state.ownedRelics),
       ownedCompanionIds: new Set(this.state.companions.map((c) => c.id)),
+      unlockedCompanionIds: this.unlockedCompanionIds,
       companionRosterFull: this.state.companions.length >= MAX_ACTIVE_COMPANIONS,
       ownedActiveSpellIds: new Set(this.state.activeSpells.map((s) => s.id)),
       activeSpellSlotsFull: this.state.activeSpells.length >= MAX_ACTIVE_SPELLS,
