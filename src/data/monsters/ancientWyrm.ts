@@ -4,8 +4,8 @@ export const ancientWyrm: MonsterDefinition = {
   id: 'ancient_wyrm',
   name: 'Ancient Wyrm',
   tier: 'boss',
-  maxHp: 220,
-  attack: 14,
+  maxHp: 110,
+  attack: 7,
   attackIntervalMs: 1100,
-  xpReward: 120,
+  xpReward: 130,
 };
