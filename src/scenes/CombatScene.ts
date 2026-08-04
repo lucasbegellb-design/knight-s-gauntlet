@@ -14,6 +14,7 @@ import { allMonsters } from '../data/monsters';
 import { spellRegistry } from '../data/spells';
 import { classRegistry, knightClass } from '../data/classes';
 import { allZones } from '../data/zones';
+import { continentForZone } from '../data/continents';
 import { resolveForgeWeaponModifiers } from '../data/forgeWeapon';
 import { useRunStore } from '../store/runStore';
 import type { EquippedDisplay } from '../store/runStore';
@@ -257,7 +258,14 @@ export class CombatScene extends Phaser.Scene {
         useMetaStore.getState().discover('monster', event.monster.id);
         if (event.zone.isNewZone) {
           this.applyZoneBackground();
-          this.showFloatingText(400, 34, `Entering ${event.zone.name}`, '#f3f4f6', 18);
+          const continent = continentForZone(event.zone.id);
+          const isFirstZoneOfContinent = continent?.zoneIds[0] === event.zone.id;
+          if (continent && isFirstZoneOfContinent) {
+            this.showFloatingText(400, 26, continent.name.toUpperCase(), '#e8b64c', 20);
+            this.showFloatingText(400, 52, event.zone.name, '#f3f4f6', 16);
+          } else {
+            this.showFloatingText(400, 34, `Entering ${event.zone.name}`, '#f3f4f6', 18);
+          }
         }
       }
       if (event.type === 'levelUp') {

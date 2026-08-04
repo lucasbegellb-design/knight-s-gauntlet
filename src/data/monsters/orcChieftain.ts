@@ -4,8 +4,8 @@ export const orcChieftain: MonsterDefinition = {
   id: 'orc_chieftain',
   name: 'Orc Chieftain',
   tier: 'miniboss',
-  maxHp: 90,
-  attack: 9,
+  maxHp: 65,
+  attack: 6,
   attackIntervalMs: 1000,
   xpReward: 40,
 };

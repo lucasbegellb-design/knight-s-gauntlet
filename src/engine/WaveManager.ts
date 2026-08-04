@@ -18,7 +18,7 @@ import { RARITY_POWER_MULTIPLIER, type Rarity } from '../data/rarity';
 import type { RelicModifier } from '../data/relic.types';
 
 /** Fraction of missing HP recovered on each wave clear, on top of any relic-granted regen. */
-const WAVE_CLEAR_HEAL_FRACTION = 0.3;
+const WAVE_CLEAR_HEAL_FRACTION = 0.45;
 const PHOENIX_HEART_ID = 'phoenix_heart';
 const PHOENIX_REVIVE_HP_FRACTION = 0.5;
 export const MAX_ACTIVE_COMPANIONS = 3;

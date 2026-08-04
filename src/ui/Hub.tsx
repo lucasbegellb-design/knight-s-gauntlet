@@ -13,6 +13,8 @@ import { GeneratedPortrait } from './RarityIcon';
 import { forgeWeapon, forgeWeaponUpgradeCost, resolveForgeWeaponModifiers, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWeapon';
 import { GachaTab } from './GachaTab';
 import { GachaReveal } from './GachaReveal';
+import { WorldTab } from './WorldTab';
+import { IdleEssenceBanner } from './IdleEssenceBanner';
 
 const MODIFIER_LABEL: Record<string, string> = {
   damageMultiplier: 'damage',
@@ -32,7 +34,7 @@ const BRANCH_LABEL: Record<TalentBranch, string> = {
   economy: 'Economy',
 };
 
-const TABS = ['talents', 'forge', 'gacha', 'companions', 'grimoire'] as const;
+const TABS = ['talents', 'forge', 'gacha', 'companions', 'grimoire', 'world'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   talents: 'Talents',
@@ -40,8 +42,9 @@ const TAB_LABEL: Record<Tab, string> = {
   gacha: 'Gacha',
   companions: 'Companions',
   grimoire: 'Grimoire',
+  world: 'World',
 };
-const TAB_ICON: Record<Tab, string> = { talents: '✨', forge: '🔨', gacha: '🔮', companions: '🤝', grimoire: '📖' };
+const TAB_ICON: Record<Tab, string> = { talents: '✨', forge: '🔨', gacha: '🔮', companions: '🤝', grimoire: '📖', world: '🗺️' };
 
 function TalentsTab() {
   const currency = useMetaStore((s) => s.currency);
@@ -306,6 +309,8 @@ export function Hub() {
         </button>
       </div>
 
+      <IdleEssenceBanner />
+
       <div className="hud-row hub-tab-row">
         {TABS.map((t) => (
           <button key={t} type="button" className={`speed-button${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
@@ -319,6 +324,7 @@ export function Hub() {
       {tab === 'gacha' && <GachaTab />}
       {tab === 'companions' && <CompanionsTab />}
       {tab === 'grimoire' && <GrimoireTab />}
+      {tab === 'world' && <WorldTab />}
 
       <GachaReveal />
     </div>

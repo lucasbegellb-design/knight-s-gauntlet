@@ -8,6 +8,7 @@ import type { Rarity } from '../data/rarity';
 import { forgeWeaponUpgradeCost, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWeapon';
 import { allCompanions, STARTER_COMPANION_IDS } from '../data/companions';
 import { pullGacha, pullGachaMulti, type GachaPullResult } from '../engine/gacha';
+import { pendingIdleEssence } from '../engine/idleEssence';
 
 const STORAGE_KEY = 'knights-gauntlet-meta-v1';
 const MAX_FORGE_LEVEL = 20;
@@ -32,6 +33,8 @@ interface PersistedMeta {
   forgeWeaponLevel: number;
   /** Companions unlocked via the Gacha (src/ui/Gacha.tsx) — only these can appear in an in-run loot pool. */
   unlockedCompanionIds: string[];
+  /** Timestamp (epoch ms) essence was last collected — the difference from "now" is how idle essence accrual is computed (see src/engine/idleEssence.ts). */
+  lastEssenceCollectionAt: number;
   discoveredRelicIds: string[];
   discoveredSpellIds: string[];
   discoveredEquipmentIds: string[];
@@ -55,6 +58,7 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   brokenParts: 0,
   forgeWeaponLevel: 0,
   unlockedCompanionIds: [...STARTER_COMPANION_IDS],
+  lastEssenceCollectionAt: Date.now(),
   discoveredRelicIds: [],
   discoveredSpellIds: [],
   discoveredEquipmentIds: [],
@@ -105,6 +109,8 @@ interface MetaStore extends PersistedMeta {
   pullGachaSingle: () => void;
   pullGachaMulti: () => void;
   clearGachaResults: () => void;
+  /** Deposits whatever idle essence has accrued since lastEssenceCollectionAt and resets the timer. */
+  collectIdleEssence: () => void;
 }
 
 function persistedSlice(state: MetaStore): PersistedMeta {
@@ -116,6 +122,7 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     brokenParts: state.brokenParts,
     forgeWeaponLevel: state.forgeWeaponLevel,
     unlockedCompanionIds: state.unlockedCompanionIds,
+    lastEssenceCollectionAt: state.lastEssenceCollectionAt,
     discoveredRelicIds: state.discoveredRelicIds,
     discoveredSpellIds: state.discoveredSpellIds,
     discoveredEquipmentIds: state.discoveredEquipmentIds,
@@ -207,6 +214,13 @@ export const useMetaStore = create<MetaStore>((set) => ({
       return applyGachaResults(state, results, GACHA_MULTI_PULL_COST);
     }),
   clearGachaResults: () => set({ lastGachaResults: null }),
+  collectIdleEssence: () =>
+    set((state) => {
+      const now = Date.now();
+      const pending = pendingIdleEssence(state.lastEssenceCollectionAt, now);
+      if (pending <= 0) return { lastEssenceCollectionAt: now };
+      return { currency: state.currency + pending, lastEssenceCollectionAt: now };
+    }),
 }));
 
 /** Shared by pullGachaSingle/pullGachaMulti: deducts the pull cost, unlocks any new companions, refunds essence for duplicates, and stashes the results for the reveal overlay. */
