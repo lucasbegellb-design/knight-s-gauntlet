@@ -46,12 +46,21 @@ const MONSTER_SPRITE_SCALE: Record<string, number> = {
 const ZONE_BACKGROUND: Record<string, number> = Object.fromEntries(allZones.map((zone) => [zone.id, zone.backgroundColor]));
 const DEFAULT_BACKGROUND = 0x1d1d1d;
 
-const ATTACK_LUNGE_DISTANCE = 26;
-const ATTACK_LUNGE_DURATION_MS = 110;
-const HIT_SHAKE_DISTANCE = 6;
-const HIT_SHAKE_DURATION_MS = 70;
+const ATTACK_LUNGE_DISTANCE = 34;
+const ATTACK_LUNGE_OUT_MS = 130;
+const ATTACK_LUNGE_BACK_MS = 160;
+const HIT_SHAKE_DISTANCE = 7;
+const HIT_SHAKE_DURATION_MS = 55;
+const HIT_FLASH_MS = 130;
+const IMPACT_BURST_MS = 220;
 const DEATH_FADE_DURATION_MS = 420;
 const SPAWN_IN_DURATION_MS = 320;
+const IDLE_BOB_AMPLITUDE = 5;
+const IDLE_BOB_DURATION_MS = 1100;
+const CAMERA_SHAKE_HIT_MS = 70;
+const CAMERA_SHAKE_HIT_INTENSITY = 0.0025;
+const CAMERA_SHAKE_CRIT_MS = 140;
+const CAMERA_SHAKE_CRIT_INTENSITY = 0.007;
 
 const COMPANION_ROLE_COLOR: Record<CompanionRole, number> = {
   tank: 0x34495e,
@@ -62,21 +71,34 @@ const COMPANION_ROLE_COLOR: Record<CompanionRole, number> = {
 };
 
 const HP_BAR_WIDTH = 160;
-const HP_BAR_HEIGHT = 14;
-const COMPANION_BAR_WIDTH = 70;
-const COMPANION_BAR_HEIGHT = 8;
-const HERO_X = 220;
-const MONSTER_X = 580;
-const UNIT_Y = 260;
-const COMPANION_Y = 400;
-const COMPANION_SLOT_X = [140, 220, 300];
-const COMPANION_SIZE = { width: 44, height: 64 };
+const HP_BAR_HEIGHT = 12;
+const ATB_BAR_HEIGHT = 5;
+const COMPANION_BAR_WIDTH = 64;
+const COMPANION_BAR_HEIGHT = 7;
+
+/** Party clustered bottom-left in a small diagonal formation (front hero + staggered allies behind), single enemy front-right — the classic FFBE-style facing arrangement. */
+const HERO_X = 250;
+const HERO_Y = 300;
+const MONSTER_X = 570;
+const MONSTER_Y = 250;
+const COMPANION_SLOTS = [
+  { x: 130, y: 225 },
+  { x: 150, y: 345 },
+  { x: 70, y: 285 },
+];
+const COMPANION_SIZE = { width: 46, height: 66 };
 
 interface UnitView {
   body: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
+  shadow: Phaser.GameObjects.Ellipse;
   hpBarBg: Phaser.GameObjects.Rectangle;
   hpBarFill: Phaser.GameObjects.Rectangle;
+  atbBarBg: Phaser.GameObjects.Rectangle;
+  atbBarFill: Phaser.GameObjects.Rectangle;
   hpLabel: Phaser.GameObjects.Text;
+  idleTween: Phaser.Tweens.Tween | null;
+  /** The unit's persistent tint (e.g. a class color), restored after a hit-flash's temporary white tintFill. */
+  restTint: number;
   /** Home position the attack lunge tween returns to; the hp bar/label stay pinned here regardless of the body's lunge offset. */
   baseX: number;
   baseY: number;
@@ -89,6 +111,8 @@ export class CombatScene extends Phaser.Scene {
   private allyViews: UnitView[] = [];
   private lastLootChoiceToken = 0;
   private heroTint = 0xffffff;
+  /** Set by a critHit event, consumed by the attack event that immediately follows it (CombatEngine always emits them in that order). */
+  private pendingCrit = false;
   private heroClassName = 'Knight';
 
   constructor() {
@@ -163,7 +187,7 @@ export class CombatScene extends Phaser.Scene {
     this.allyViews.forEach((view) => this.destroyUnitView(view));
     this.allyViews = [];
 
-    this.heroView = this.createUnitView(HERO_X, UNIT_Y, HERO_SIZE.width, HERO_SIZE.height, HERO_COLOR, HERO_TEXTURE_KEY, undefined, undefined, this.heroTint);
+    this.heroView = this.createUnitView(HERO_X, HERO_Y, HERO_SIZE.width, HERO_SIZE.height, HERO_COLOR, HERO_TEXTURE_KEY, undefined, undefined, this.heroTint);
     this.updateUnitView(this.heroView, state.hero.name, state.hero.hp, state.hero.maxHp);
     this.rebuildMonsterView();
     this.rebuildAllyViews();
@@ -184,7 +208,7 @@ export class CombatScene extends Phaser.Scene {
     const scale = MONSTER_SPRITE_SCALE[state.monster.id] ?? 1;
     this.monsterView = this.createUnitView(
       MONSTER_X,
-      UNIT_Y,
+      MONSTER_Y,
       Math.round(appearance.width * scale),
       Math.round(appearance.height * scale),
       appearance.color,
@@ -200,11 +224,11 @@ export class CombatScene extends Phaser.Scene {
 
     const allies = this.waveManager.getCombatState().allies;
     allies.forEach((ally, index) => {
-      const x = COMPANION_SLOT_X[index] ?? COMPANION_SLOT_X[COMPANION_SLOT_X.length - 1] ?? HERO_X;
+      const slot = COMPANION_SLOTS[index] ?? COMPANION_SLOTS[COMPANION_SLOTS.length - 1] ?? { x: HERO_X, y: HERO_Y };
       const color = COMPANION_ROLE_COLOR[ally.role];
       const view = this.createUnitView(
-        x,
-        COMPANION_Y,
+        slot.x,
+        slot.y,
         COMPANION_SIZE.width,
         COMPANION_SIZE.height,
         color,
@@ -228,17 +252,17 @@ export class CombatScene extends Phaser.Scene {
         useMetaStore.getState().discover('monster', event.monster.id);
         if (event.zone.isNewZone) {
           this.applyZoneBackground();
-          this.showFloatingText(MONSTER_X - 180, UNIT_Y - 170, `Entering ${event.zone.name}`, '#f3f4f6');
+          this.showFloatingText(400, 34, `Entering ${event.zone.name}`, '#f3f4f6', 18);
         }
       }
       if (event.type === 'levelUp') {
-        this.showFloatingText(HERO_X, UNIT_Y - 130, 'LEVEL UP!', '#f1c40f');
+        this.showFloatingText(HERO_X, HERO_Y - 155, 'LEVEL UP!', '#f1c40f', 20);
       }
       if (event.type === 'revived') {
-        this.showFloatingText(HERO_X, UNIT_Y - 130, 'REVIVED!', '#ff3b6b');
+        this.showFloatingText(HERO_X, HERO_Y - 155, 'REVIVED!', '#ff3b6b', 20);
       }
       if (event.type === 'brokenPartsDropped') {
-        this.showFloatingText(MONSTER_X, UNIT_Y - 175, `+${event.amount} Broken Parts`, '#b39dff');
+        this.showFloatingText(MONSTER_X, MONSTER_Y - 175, `+${event.amount} Broken Parts`, '#b39dff');
       }
       if (event.type === 'lootChosen') {
         this.discoverLootOption(event.option);
@@ -264,27 +288,34 @@ export class CombatScene extends Phaser.Scene {
     if (event.type === 'attack') {
       const attackerView = this.viewForId(event.attackerId, heroId);
       const targetView = this.viewForId(event.targetId, heroId);
-      if (attackerView && targetView) this.attackLunge(attackerView, targetView.baseX);
-      if (targetView) this.hitShake(targetView);
+      const wasCrit = this.pendingCrit;
+      this.pendingCrit = false;
+      if (attackerView) this.attackLunge(attackerView, targetView?.baseX ?? attackerView.baseX);
+      // Delay the impact (flash/shake/burst/number) until the attacker's lunge actually reaches the target — a real hit-stop beat instead of everything firing at once.
+      this.time.delayedCall(ATTACK_LUNGE_OUT_MS, () => {
+        if (targetView) this.hitImpact(targetView, event.damage, wasCrit);
+      });
     }
     if (event.type === 'death') {
       const view = this.viewForId(event.combatantId, heroId);
       if (view) this.deathAnimation(view);
     }
     if (event.type === 'critHit') {
-      this.showFloatingText(MONSTER_X, UNIT_Y - 130, 'CRIT!', '#ffd23f');
+      this.pendingCrit = true;
+      this.showFloatingText(400, 190, 'CRITICAL!', '#ffd23f', 24);
     }
     if (event.type === 'statusProc' && event.kind === 'burn') {
-      this.showFloatingText(MONSTER_X, UNIT_Y - 145, `-${event.damage} burn`, '#e67e22');
+      const pos = this.positionForId(event.targetId, heroId) ?? { x: MONSTER_X, y: MONSTER_Y };
+      this.showFloatingText(pos.x + 20, pos.y - 160, `-${event.damage} burn`, '#e67e22');
     }
     if (event.type === 'lifesteal') {
-      this.showFloatingText(HERO_X, UNIT_Y - 145, `+${event.amount}`, '#2ecc71');
+      this.showFloatingText(HERO_X, HERO_Y - 165, `+${event.amount}`, '#2ecc71');
     }
     if (event.type === 'execute') {
-      this.showFloatingText(MONSTER_X, UNIT_Y - 130, 'EXECUTED', '#e74c3c');
+      this.showFloatingText(MONSTER_X, MONSTER_Y - 150, 'EXECUTED', '#e74c3c', 20);
     }
     if (event.type === 'reflect') {
-      this.showFloatingText(MONSTER_X, UNIT_Y - 160, `-${event.damage} reflect`, '#9b59b6');
+      this.showFloatingText(MONSTER_X, MONSTER_Y - 180, `-${event.damage} reflect`, '#9b59b6');
     }
     if (event.type === 'companionHeal') {
       const pos = this.positionForId(event.targetId, heroId);
@@ -307,22 +338,53 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private positionForId(id: string, heroId: string): { x: number; y: number } | undefined {
-    if (id === heroId) return { x: HERO_X, y: UNIT_Y };
-    if (id === this.waveManager.getCombatState().monster.id) return { x: MONSTER_X, y: UNIT_Y };
+    if (id === heroId) return { x: HERO_X, y: HERO_Y };
+    if (id === this.waveManager.getCombatState().monster.id) return { x: MONSTER_X, y: MONSTER_Y };
     const allies = this.waveManager.getCombatState().allies;
     const index = allies.findIndex((a) => a.combatant.id === id);
     if (index < 0) return undefined;
-    const x = COMPANION_SLOT_X[index] ?? COMPANION_SLOT_X[COMPANION_SLOT_X.length - 1] ?? HERO_X;
-    return { x, y: COMPANION_Y };
+    return COMPANION_SLOTS[index] ?? COMPANION_SLOTS[COMPANION_SLOTS.length - 1] ?? { x: HERO_X, y: HERO_Y };
+  }
+
+  /** Fraction (0-1) of the way this combatant is toward its next action — the same per-unit timer the engine already runs, just surfaced as a fillable ATB gauge instead of staying invisible. */
+  private atbProgress(nextAttackAt: number, attackIntervalMs: number, elapsedMs: number): number {
+    if (attackIntervalMs <= 0) return 1;
+    return Phaser.Math.Clamp(1 - (nextAttackAt - elapsedMs) / attackIntervalMs, 0, 1);
+  }
+
+  private updateAtbBar(view: UnitView, ratio: number | null, barWidth: number): void {
+    const visible = ratio !== null;
+    view.atbBarBg.setVisible(visible);
+    view.atbBarFill.setVisible(visible);
+    if (ratio !== null) view.atbBarFill.width = barWidth * ratio;
   }
 
   private syncUnitViews(): void {
     const state = this.waveManager.getCombatState();
+
     this.updateUnitView(this.heroView, state.hero.name, state.hero.hp, state.hero.maxHp);
+    this.updateAtbBar(
+      this.heroView,
+      state.hero.hp > 0 ? this.atbProgress(state.hero.nextAttackAt, state.hero.attackIntervalMs, state.elapsedMs) : null,
+      HP_BAR_WIDTH,
+    );
+
     this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
+    this.updateAtbBar(
+      this.monsterView,
+      state.monster.hp > 0 ? this.atbProgress(state.monster.nextAttackAt, state.monster.attackIntervalMs, state.elapsedMs) : null,
+      HP_BAR_WIDTH,
+    );
+
     state.allies.forEach((ally, index) => {
       const view = this.allyViews[index];
-      if (view) this.updateUnitView(view, ally.combatant.name, ally.combatant.hp, ally.combatant.maxHp, COMPANION_BAR_WIDTH);
+      if (!view) return;
+      this.updateUnitView(view, ally.combatant.name, ally.combatant.hp, ally.combatant.maxHp, COMPANION_BAR_WIDTH);
+      const ratio =
+        ally.actsIndependently && ally.combatant.hp > 0
+          ? this.atbProgress(ally.combatant.nextAttackAt, ally.combatant.attackIntervalMs, state.elapsedMs)
+          : null;
+      this.updateAtbBar(view, ratio, COMPANION_BAR_WIDTH);
     });
   }
 
@@ -401,6 +463,7 @@ export class CombatScene extends Phaser.Scene {
     tint?: number,
   ): UnitView {
     const barY = bodyY - height / 2 - 20;
+    const shadow = this.add.ellipse(bodyX, bodyY + height / 2 - 6, width * 0.6, height * 0.16, 0x000000, 0.35);
     const body =
       textureKey && this.textures.exists(textureKey)
         ? this.add.image(bodyX, bodyY, textureKey)
@@ -413,6 +476,10 @@ export class CombatScene extends Phaser.Scene {
       body.setDisplaySize(srcW * fitScale, srcH * fitScale);
     }
     if (tint !== undefined && tint !== 0xffffff && 'setTint' in body) body.setTint(tint);
+
+    const atbY = barY + barHeight + 3;
+    const atbBarBg = this.add.rectangle(bodyX, atbY, barWidth, ATB_BAR_HEIGHT, 0x1a1a22);
+    const atbBarFill = this.add.rectangle(bodyX - barWidth / 2, atbY, 0, ATB_BAR_HEIGHT, 0xf1c40f).setOrigin(0, 0.5);
     const hpBarBg = this.add.rectangle(bodyX, barY, barWidth, barHeight, 0x222222);
     const hpBarFill = this.add.rectangle(bodyX - barWidth / 2, barY, barWidth, barHeight, 0x2ecc71).setOrigin(0, 0.5);
     const hpLabel = this.add
@@ -421,15 +488,51 @@ export class CombatScene extends Phaser.Scene {
 
     body.setScale(body.scaleX * 0.4, body.scaleY * 0.4);
     body.setAlpha(0);
-    this.tweens.add({ targets: body, alpha: 1, scaleX: body.scaleX / 0.4, scaleY: body.scaleY / 0.4, duration: SPAWN_IN_DURATION_MS, ease: 'Back.Out' });
+    shadow.setAlpha(0);
+    this.tweens.add({
+      targets: body,
+      alpha: 1,
+      scaleX: body.scaleX / 0.4,
+      scaleY: body.scaleY / 0.4,
+      duration: SPAWN_IN_DURATION_MS,
+      ease: 'Back.Out',
+    });
+    this.tweens.add({ targets: shadow, alpha: 0.35, duration: SPAWN_IN_DURATION_MS });
 
-    return { body, hpBarBg, hpBarFill, hpLabel, baseX: bodyX, baseY: bodyY };
+    const view: UnitView = {
+      body,
+      shadow,
+      hpBarBg,
+      hpBarFill,
+      atbBarBg,
+      atbBarFill,
+      hpLabel,
+      idleTween: null,
+      restTint: tint ?? 0xffffff,
+      baseX: bodyX,
+      baseY: bodyY,
+    };
+    view.idleTween = this.tweens.add({
+      targets: body,
+      y: { from: bodyY, to: bodyY - IDLE_BOB_AMPLITUDE },
+      duration: IDLE_BOB_DURATION_MS + Phaser.Math.Between(-150, 150),
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.InOut',
+      delay: SPAWN_IN_DURATION_MS,
+    });
+
+    return view;
   }
 
   private destroyUnitView(view: UnitView): void {
+    view.idleTween?.stop();
     view.body.destroy();
+    view.shadow.destroy();
     view.hpBarBg.destroy();
     view.hpBarFill.destroy();
+    view.atbBarBg.destroy();
+    view.atbBarFill.destroy();
     view.hpLabel.destroy();
   }
 
@@ -442,20 +545,27 @@ export class CombatScene extends Phaser.Scene {
     if (hp > 0) view.body.setAlpha(1);
   }
 
-  /** Attacker lunges a short distance toward its target and springs back — the engine has no attack-anim concept, this is purely visual. */
+  /**
+   * Attacker lunges toward its target (fast, with a little overshoot) then eases back home. The
+   * impact itself is scheduled separately (see handleCombatEvent) to land exactly when the
+   * forward leg (ATTACK_LUNGE_OUT_MS) completes — a real hit-stop beat instead of everything
+   * firing at once.
+   */
   private attackLunge(view: UnitView, towardX: number): void {
     const direction = Math.sign(towardX - view.baseX) || 1;
     this.tweens.add({
       targets: view.body,
       x: view.baseX + direction * ATTACK_LUNGE_DISTANCE,
-      duration: ATTACK_LUNGE_DURATION_MS,
-      yoyo: true,
-      ease: 'Quad.Out',
+      duration: ATTACK_LUNGE_OUT_MS,
+      ease: 'Back.Out',
+      onComplete: () => {
+        this.tweens.add({ targets: view.body, x: view.baseX, duration: ATTACK_LUNGE_BACK_MS, ease: 'Quad.In' });
+      },
     });
   }
 
-  /** Target flinches (small side-to-side shake) and flashes on taking a hit. */
-  private hitShake(view: UnitView): void {
+  /** The actual "hit" beat: flinch, white flash, spark burst, screen shake, and the damage number — all timed to land together. */
+  private hitImpact(view: UnitView, damage: number, wasCrit: boolean): void {
     this.tweens.add({
       targets: view.body,
       x: { from: view.baseX - HIT_SHAKE_DISTANCE, to: view.baseX },
@@ -463,11 +573,70 @@ export class CombatScene extends Phaser.Scene {
       yoyo: true,
       repeat: 1,
     });
-    this.tweens.add({ targets: view.body, alpha: { from: 0.4, to: 1 }, duration: 150 });
+
+    if (view.body instanceof Phaser.GameObjects.Image) {
+      const image = view.body;
+      image.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+      this.time.delayedCall(HIT_FLASH_MS, () => {
+        if (view.restTint === 0xffffff) image.clearTint();
+        else image.setTint(view.restTint).setTintMode(Phaser.TintModes.MULTIPLY);
+      });
+    } else {
+      this.tweens.add({ targets: view.body, alpha: { from: 0.35, to: 1 }, duration: HIT_FLASH_MS });
+    }
+
+    this.spawnImpactBurst(view.baseX, view.baseY);
+    this.cameras.main.shake(
+      wasCrit ? CAMERA_SHAKE_CRIT_MS : CAMERA_SHAKE_HIT_MS,
+      wasCrit ? CAMERA_SHAKE_CRIT_INTENSITY : CAMERA_SHAKE_HIT_INTENSITY,
+    );
+    this.showDamageNumber(view.baseX, view.baseY - view.body.displayHeight * 0.6, damage, wasCrit);
+  }
+
+  /** Small expanding ring at the point of contact — a classic hit-spark. */
+  private spawnImpactBurst(x: number, y: number): void {
+    const burst = this.add.circle(x, y, 6, 0xffffff, 0.9);
+    this.tweens.add({
+      targets: burst,
+      radius: 26,
+      alpha: 0,
+      duration: IMPACT_BURST_MS,
+      ease: 'Quad.Out',
+      onComplete: () => burst.destroy(),
+    });
+  }
+
+  /** Bold, outlined, FFBE-style damage number that pops in with a bounce and drifts up while fading. Crits are bigger and orange. */
+  private showDamageNumber(x: number, y: number, amount: number, isCrit: boolean): void {
+    const fontSize = isCrit ? 30 : 21;
+    const color = isCrit ? '#ffb347' : '#ffffff';
+    const label = this.add
+      .text(x, y, `${amount}`, {
+        fontSize: `${fontSize}px`,
+        color,
+        fontStyle: '800',
+        stroke: '#1a1418',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setScale(0.3);
+
+    this.tweens.add({ targets: label, scale: 1, duration: 130, ease: 'Back.Out' });
+    this.tweens.add({
+      targets: label,
+      y: y - 46,
+      alpha: 0,
+      delay: 220,
+      duration: 480,
+      ease: 'Quad.In',
+      onComplete: () => label.destroy(),
+    });
   }
 
   /** One-shot shrink/fade/tilt played the moment a unit's death event arrives. */
   private deathAnimation(view: UnitView): void {
+    view.idleTween?.stop();
+    view.body.y = view.baseY;
     this.tweens.add({
       targets: view.body,
       scaleX: view.body.scaleX * 0.85,
@@ -477,10 +646,13 @@ export class CombatScene extends Phaser.Scene {
       duration: DEATH_FADE_DURATION_MS,
       ease: 'Quad.In',
     });
+    this.tweens.add({ targets: view.shadow, alpha: 0, duration: DEATH_FADE_DURATION_MS });
   }
 
-  private showFloatingText(x: number, y: number, text: string, color: string): void {
-    const toast = this.add.text(x, y, text, { fontSize: '16px', color, fontStyle: 'bold' }).setOrigin(0.5);
+  private showFloatingText(x: number, y: number, text: string, color: string, fontSize = 16): void {
+    const toast = this.add
+      .text(x, y, text, { fontSize: `${fontSize}px`, color, fontStyle: '800', stroke: '#1a1418', strokeThickness: 3 })
+      .setOrigin(0.5);
     this.tweens.add({
       targets: toast,
       y: y - 30,
