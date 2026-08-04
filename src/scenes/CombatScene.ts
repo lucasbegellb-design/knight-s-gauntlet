@@ -9,7 +9,7 @@ import type { MonsterTier } from '../data/monster.types';
 import type { CompanionRole } from '../data/companion.types';
 import { relicRegistry } from '../data/relics';
 import { equipmentRegistry } from '../data/equipment';
-import { companionRegistry } from '../data/companions';
+import { allCompanions, companionRegistry } from '../data/companions';
 import { allMonsters } from '../data/monsters';
 import { spellRegistry } from '../data/spells';
 import { classRegistry, knightClass } from '../data/classes';
@@ -22,6 +22,7 @@ import { useMetaStore } from '../store/metaStore';
 const ASSET_BASE = 'game-assets';
 const HERO_TEXTURE_KEY = 'hero_knight';
 const monsterTextureKey = (id: string) => `monster_${id}`;
+const companionTextureKey = (id: string) => `companion_${id}`;
 
 const HERO_COLOR = 0x3b82c4;
 const HERO_SIZE = { width: 130, height: 150 };
@@ -124,6 +125,9 @@ export class CombatScene extends Phaser.Scene {
     for (const monster of allMonsters) {
       this.load.image(monsterTextureKey(monster.id), `${ASSET_BASE}/monsters/${monster.id}.png`);
     }
+    for (const companion of allCompanions) {
+      this.load.image(companionTextureKey(companion.id), `${ASSET_BASE}/companions/${companion.id}.png`);
+    }
   }
 
   create(): void {
@@ -177,6 +181,7 @@ export class CombatScene extends Phaser.Scene {
       Date.now(),
       this.buildMetaBonuses(classDef.innateModifiers),
       startingEquipment,
+      meta.unlockedCompanionIds,
     );
 
     const state = this.waveManager.getCombatState();
@@ -232,7 +237,7 @@ export class CombatScene extends Phaser.Scene {
         COMPANION_SIZE.width,
         COMPANION_SIZE.height,
         color,
-        undefined,
+        companionTextureKey(ally.combatant.id),
         COMPANION_BAR_WIDTH,
         COMPANION_BAR_HEIGHT,
       );

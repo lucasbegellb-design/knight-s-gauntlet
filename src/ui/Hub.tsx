@@ -11,6 +11,8 @@ import { allMonsters } from '../data/monsters';
 import { RARITY_COLOR, RARITY_LABEL } from '../data/rarity';
 import { GeneratedPortrait } from './RarityIcon';
 import { forgeWeapon, forgeWeaponUpgradeCost, resolveForgeWeaponModifiers, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWeapon';
+import { GachaTab } from './GachaTab';
+import { GachaReveal } from './GachaReveal';
 
 const MODIFIER_LABEL: Record<string, string> = {
   damageMultiplier: 'damage',
@@ -30,10 +32,16 @@ const BRANCH_LABEL: Record<TalentBranch, string> = {
   economy: 'Economy',
 };
 
-const TABS = ['talents', 'forge', 'companions', 'grimoire'] as const;
+const TABS = ['talents', 'forge', 'gacha', 'companions', 'grimoire'] as const;
 type Tab = (typeof TABS)[number];
-const TAB_LABEL: Record<Tab, string> = { talents: 'Talents', forge: 'Forge', companions: 'Companions', grimoire: 'Grimoire' };
-const TAB_ICON: Record<Tab, string> = { talents: '✨', forge: '🔨', companions: '🤝', grimoire: '📖' };
+const TAB_LABEL: Record<Tab, string> = {
+  talents: 'Talents',
+  forge: 'Forge',
+  gacha: 'Gacha',
+  companions: 'Companions',
+  grimoire: 'Grimoire',
+};
+const TAB_ICON: Record<Tab, string> = { talents: '✨', forge: '🔨', gacha: '🔮', companions: '🤝', grimoire: '📖' };
 
 function TalentsTab() {
   const currency = useMetaStore((s) => s.currency);
@@ -160,7 +168,7 @@ function CompanionsTab() {
           return (
             <div key={companion.id} className="hub-row-item locked">
               <div className="hub-item-name">???</div>
-              <div className="hub-item-description">Recruit this companion in a run to unlock it here.</div>
+              <div className="hub-item-description">Summon this character in the Gacha to unlock it here.</div>
             </div>
           );
         }
@@ -169,6 +177,7 @@ function CompanionsTab() {
         const cost = companionUpgradeCost(rank);
         return (
           <div key={companion.id} className="hub-row-item">
+            <GeneratedPortrait category="companions_illustration" id={companion.id} size={40} />
             <div>
               <div className="hub-item-name">
                 {companion.name} <span className="hub-item-rank">({companion.role})</span>{' '}
@@ -307,8 +316,11 @@ export function Hub() {
 
       {tab === 'talents' && <TalentsTab />}
       {tab === 'forge' && <ForgeTab />}
+      {tab === 'gacha' && <GachaTab />}
       {tab === 'companions' && <CompanionsTab />}
       {tab === 'grimoire' && <GrimoireTab />}
+
+      <GachaReveal />
     </div>
   );
 }

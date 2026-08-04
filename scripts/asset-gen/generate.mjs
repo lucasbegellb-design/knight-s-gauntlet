@@ -7,8 +7,16 @@ import { writeFile, mkdir, access } from 'node:fs/promises';
 import path from 'node:path';
 import { manifest } from './manifest.mjs';
 
-const STYLE_SUFFIX =
+/** Default style for hero/monster/icon entries (no `style` field) — unchanged from the original pipeline so existing assets stay reproducible. */
+const CHIBI_STYLE =
   ', JRPG sprite, Final Fantasy Brave Exvius style, semi-realistic chibi, clean pixel art, transparent background, game asset';
+/** Gacha character menu splash art — a nicer, more detailed illustration than the in-game chibi style. */
+const ILLUSTRATION_STYLE =
+  ', beautiful gacha character splash art, Brave Frontier style illustration, vibrant colors, detailed fantasy character portrait, dynamic pose, high quality game art, clean simple background';
+/** Gacha character combat sprite — deliberately distinct from the illustration: a retro pixel-art battle sprite. */
+const PIXEL_ART_STYLE =
+  ', 16-bit pixel art sprite, retro SNES-era JRPG battle sprite, limited color palette, crisp pixelated edges, no anti-aliasing, game sprite, transparent background';
+const STYLE_BY_NAME = { illustration: ILLUSTRATION_STYLE, pixelArt: PIXEL_ART_STYLE };
 const OUTPUT_ROOT = path.resolve(process.cwd(), 'public/game-assets');
 const FAILURE_LOG = path.resolve(process.cwd(), 'scripts/asset-gen/failures.json');
 const HORDE_BASE = 'https://aihorde.net/api/v2';
@@ -17,7 +25,8 @@ const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt';
 const POLLINATIONS_DELAY_MS = 25000;
 
 function buildPrompt(entry) {
-  return `${entry.prompt}${STYLE_SUFFIX}`;
+  const suffix = (entry.style && STYLE_BY_NAME[entry.style]) || CHIBI_STYLE;
+  return `${entry.prompt}${suffix}`;
 }
 
 function outputPath(entry) {

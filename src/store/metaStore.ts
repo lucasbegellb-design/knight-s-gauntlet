@@ -6,12 +6,19 @@ import { classRegistry } from '../data/classes';
 import { Rng } from '../engine/rng';
 import type { Rarity } from '../data/rarity';
 import { forgeWeaponUpgradeCost, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWeapon';
+import { allCompanions, STARTER_COMPANION_IDS } from '../data/companions';
+import { pullGacha, pullGachaMulti, type GachaPullResult } from '../engine/gacha';
 
 const STORAGE_KEY = 'knights-gauntlet-meta-v1';
 const MAX_FORGE_LEVEL = 20;
 const FORGE_BASE_COST = 25;
 const MAX_COMPANION_UPGRADE_RANK = 5;
 const COMPANION_UPGRADE_BASE_COST = 30;
+export const GACHA_SINGLE_PULL_COST = 120;
+export const GACHA_MULTI_PULL_COUNT = 10;
+export const GACHA_MULTI_PULL_COST = 1000;
+/** Fraction of a single pull's cost refunded as essence when a pull rolls a companion already unlocked. */
+const GACHA_DUPLICATE_REFUND_FRACTION = 0.3;
 
 export type DiscoveryKind = 'relic' | 'spell' | 'equipment' | 'monster' | 'companion';
 
@@ -23,6 +30,8 @@ interface PersistedMeta {
   /** Salvage material for the Forge Weapon, dropped by monsters during runs (see src/engine/brokenParts.ts). */
   brokenParts: number;
   forgeWeaponLevel: number;
+  /** Companions unlocked via the Gacha (src/ui/Gacha.tsx) — only these can appear in an in-run loot pool. */
+  unlockedCompanionIds: string[];
   discoveredRelicIds: string[];
   discoveredSpellIds: string[];
   discoveredEquipmentIds: string[];
@@ -45,6 +54,7 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   forgeLevel: 0,
   brokenParts: 0,
   forgeWeaponLevel: 0,
+  unlockedCompanionIds: [...STARTER_COMPANION_IDS],
   discoveredRelicIds: [],
   discoveredSpellIds: [],
   discoveredEquipmentIds: [],
@@ -90,6 +100,11 @@ interface MetaStore extends PersistedMeta {
   upgradeForge: () => void;
   upgradeForgeWeapon: () => void;
   discover: (kind: DiscoveryKind, id: string) => void;
+  /** Results of the most recent Gacha pull, shown by the reveal overlay; cleared once acknowledged. */
+  lastGachaResults: GachaPullResult[] | null;
+  pullGachaSingle: () => void;
+  pullGachaMulti: () => void;
+  clearGachaResults: () => void;
 }
 
 function persistedSlice(state: MetaStore): PersistedMeta {
@@ -100,6 +115,7 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     forgeLevel: state.forgeLevel,
     brokenParts: state.brokenParts,
     forgeWeaponLevel: state.forgeWeaponLevel,
+    unlockedCompanionIds: state.unlockedCompanionIds,
     discoveredRelicIds: state.discoveredRelicIds,
     discoveredSpellIds: state.discoveredSpellIds,
     discoveredEquipmentIds: state.discoveredEquipmentIds,
@@ -175,7 +191,46 @@ export const useMetaStore = create<MetaStore>((set) => ({
       if (existing.includes(id)) return state;
       return { [key]: [...existing, id] } as Partial<MetaStore>;
     }),
+  lastGachaResults: null,
+  pullGachaSingle: () =>
+    set((state) => {
+      if (state.currency < GACHA_SINGLE_PULL_COST) return state;
+      const owned = new Set(state.unlockedCompanionIds);
+      const result = pullGacha(new Rng(Date.now()), allCompanions, owned);
+      return applyGachaResults(state, [result], GACHA_SINGLE_PULL_COST);
+    }),
+  pullGachaMulti: () =>
+    set((state) => {
+      if (state.currency < GACHA_MULTI_PULL_COST) return state;
+      const owned = new Set(state.unlockedCompanionIds);
+      const results = pullGachaMulti(new Rng(Date.now()), allCompanions, owned, GACHA_MULTI_PULL_COUNT);
+      return applyGachaResults(state, results, GACHA_MULTI_PULL_COST);
+    }),
+  clearGachaResults: () => set({ lastGachaResults: null }),
 }));
+
+/** Shared by pullGachaSingle/pullGachaMulti: deducts the pull cost, unlocks any new companions, refunds essence for duplicates, and stashes the results for the reveal overlay. */
+function applyGachaResults(state: MetaStore, results: GachaPullResult[], totalCost: number): Partial<MetaStore> {
+  const unlocked = new Set(state.unlockedCompanionIds);
+  const discoveredCompanionIds = new Set(state.discoveredCompanionIds);
+  let refund = 0;
+
+  for (const result of results) {
+    discoveredCompanionIds.add(result.companion.id);
+    if (result.isNew) {
+      unlocked.add(result.companion.id);
+    } else {
+      refund += Math.round(GACHA_SINGLE_PULL_COST * GACHA_DUPLICATE_REFUND_FRACTION);
+    }
+  }
+
+  return {
+    currency: state.currency - totalCost + refund,
+    unlockedCompanionIds: [...unlocked],
+    discoveredCompanionIds: [...discoveredCompanionIds],
+    lastGachaResults: results,
+  };
+}
 
 export { MAX_FORGE_LEVEL, MAX_COMPANION_UPGRADE_RANK, MAX_FORGE_WEAPON_LEVEL };
 
