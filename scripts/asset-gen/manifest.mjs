@@ -186,4 +186,119 @@ export const manifest = [
     style: 'pixelArt',
     prompt: 'a battle-worn banner-bearer holding a great standard and a rune-etched aegis shield, commanding heroic stance',
   },
+
+  // Kingdom territories: landscape/banner art, ids matching src/data/kingdom/territories.ts.
+  {
+    id: 'ember_reach_foothills',
+    category: 'territories',
+    style: 'landscape',
+    prompt: 'volcanic foothill borderlands with smoking forges and mining camps, warm orange glow',
+  },
+  {
+    id: 'frostmark_passes',
+    category: 'territories',
+    style: 'landscape',
+    prompt: 'a snowbound mountain pass with a fortified garrison, icy peaks, cold blue light',
+  },
+  {
+    id: 'the_sunken_coast',
+    category: 'territories',
+    style: 'landscape',
+    prompt: 'a reclaimed coastal trade port with tall ships and tide-worn docks, sunset over the sea',
+  },
+  {
+    id: 'duskwood_marches',
+    category: 'territories',
+    style: 'landscape',
+    prompt: 'ancient forest academies with towers among old-growth trees, dusky purple twilight',
+  },
+  {
+    id: 'the_ashfall_steppe',
+    category: 'territories',
+    style: 'landscape',
+    prompt: 'windswept ash-grey steppe plains with distant riders, overcast dramatic sky',
+  },
+  {
+    id: 'the_obsidian_crown',
+    category: 'territories',
+    style: 'landscape',
+    prompt: 'a broken obsidian throne room, cracked black stone and dying embers, an annexed rival capital',
+  },
+
+  // Kingdom allied lords: character portraits, ids matching src/data/kingdom/lords.ts.
+  {
+    id: 'marshal_kade_ironhold',
+    category: 'lords',
+    style: 'illustration',
+    prompt: 'a stern armored marshal general with a battle-worn cloak, defensive tactician, commanding presence',
+  },
+  {
+    id: 'warlord_ysolde_blackmane',
+    category: 'lords',
+    style: 'illustration',
+    prompt: 'a fierce female warlord raider with dark war paint and twin blades, aggressive confident stance',
+  },
+  {
+    id: 'quartermaster_renn',
+    category: 'lords',
+    style: 'illustration',
+    prompt: 'a shrewd quartermaster in a leather coat surrounded by ledgers and supply crates, calculating expression',
+  },
+  {
+    id: 'sage_aveline_of_the_spire',
+    category: 'lords',
+    style: 'illustration',
+    prompt: 'an elegant elder sage in flowing spire-blue robes holding an ancient tome, wise scholarly expression',
+  },
+  {
+    id: 'bloodguard_captain_thrace',
+    category: 'lords',
+    style: 'illustration',
+    prompt: 'a battle-hardened field medic captain in crimson battlefield armor, resolute and grim',
+  },
+  {
+    id: 'the_exiled_prince_corvin',
+    category: 'lords',
+    style: 'illustration',
+    prompt: 'a deposed royal prince in tattered but regal finery, a broken crown, defiant proud expression',
+  },
+
+  // Zone backdrops: full-bleed environment art, ids matching src/data/zones.ts.
+  {
+    id: 'greenwood_fringe',
+    category: 'zones',
+    style: 'landscape',
+    prompt: 'the edge of a dense mysterious forest gauntlet, dappled green light, goblin campfires in the distance',
+  },
+  {
+    id: 'bonefields',
+    category: 'zones',
+    style: 'landscape',
+    prompt: 'a sunken graveyard under a pale moon, jagged bone fragments jutting from purple mist',
+  },
+  {
+    id: 'cinder_wastes',
+    category: 'zones',
+    style: 'landscape',
+    prompt: 'scorched ash-choked flatlands under a smoldering red sky, cracked burnt earth',
+  },
+  {
+    id: 'wyrms_reach',
+    category: 'zones',
+    style: 'landscape',
+    prompt: 'a vast dark arcane wasteland where reality frays at the edges, swirling violet void energy',
+  },
 ];
+
+/**
+ * Second-frame "attack pose" entries derived automatically from every hero/monster/companion
+ * combat-sprite entry above, instead of hand-duplicating ~34 prompts — stays in sync forever as
+ * roster content is added. generate.mjs turns entry.frame === 'attack' into an img2img request
+ * sourced from the sibling idle PNG (see buildPrompt/outputPath there), so the new pose stays
+ * visually anchored to the same character instead of drifting on an independent txt2img roll.
+ */
+export const attackFrameManifest = manifest
+  .filter((entry) => ['hero', 'monsters', 'companions'].includes(entry.category))
+  .map((entry) => ({ ...entry, frame: 'attack' }));
+
+export const fullManifest = [...manifest, ...attackFrameManifest];
