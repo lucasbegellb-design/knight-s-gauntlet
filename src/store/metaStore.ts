@@ -17,6 +17,16 @@ const MAX_FORGE_LEVEL = 20;
 const FORGE_BASE_COST = 25;
 const MAX_COMPANION_UPGRADE_RANK = 5;
 const COMPANION_UPGRADE_BASE_COST = 30;
+export const MAX_ASCENSION_LEVEL = 20;
+const ASCENSION_SHARD_BASE_COST = 3;
+/** Ascension Shards granted per duplicate pull, scaled by the companion's rarity — a legendary duplicate is a real windfall, not just noise. */
+const ASCENSION_SHARD_YIELD: Record<Rarity, number> = {
+  common: 1,
+  rare: 2,
+  epic: 3,
+  legendary: 5,
+  mythic: 8,
+};
 export const GACHA_SINGLE_PULL_COST = 120;
 export const GACHA_MULTI_PULL_COUNT = 10;
 export const GACHA_MULTI_PULL_COST = 1000;
@@ -29,6 +39,10 @@ interface PersistedMeta {
   currency: number;
   talentRanks: Record<string, number>;
   companionUpgrades: Record<string, number>;
+  /** Un-spent Ascension Shards per companion, earned from gacha duplicates — see ascendCompanion. */
+  companionShards: Record<string, number>;
+  /** Ascension level per companion — each level raises that companion's rank cap by +1 beyond the base MAX_COMPANION_UPGRADE_RANK. */
+  companionAscension: Record<string, number>;
   forgeLevel: number;
   /** Salvage material for the Forge Weapon, dropped by monsters during runs (see src/engine/brokenParts.ts). */
   brokenParts: number;
@@ -60,6 +74,8 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   currency: 0,
   talentRanks: {},
   companionUpgrades: {},
+  companionShards: {},
+  companionAscension: {},
   forgeLevel: 0,
   brokenParts: 0,
   forgeWeaponLevel: 0,
@@ -110,6 +126,7 @@ interface MetaStore extends PersistedMeta {
   depositBrokenParts: (amount: number) => void;
   purchaseTalentRank: (talentId: string) => void;
   upgradeCompanion: (companionId: string) => void;
+  ascendCompanion: (companionId: string) => void;
   upgradeForge: () => void;
   upgradeForgeWeapon: () => void;
   conquerTerritory: (territoryId: string) => void;
@@ -130,6 +147,8 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     currency: state.currency,
     talentRanks: state.talentRanks,
     companionUpgrades: state.companionUpgrades,
+    companionShards: state.companionShards,
+    companionAscension: state.companionAscension,
     forgeLevel: state.forgeLevel,
     brokenParts: state.brokenParts,
     forgeWeaponLevel: state.forgeWeaponLevel,
@@ -152,6 +171,15 @@ export function forgeUpgradeCost(currentLevel: number): number {
 
 export function companionUpgradeCost(currentRank: number): number {
   return costForRank(COMPANION_UPGRADE_BASE_COST, currentRank);
+}
+
+export function ascensionShardCost(currentAscensionLevel: number): number {
+  return costForRank(ASCENSION_SHARD_BASE_COST, currentAscensionLevel);
+}
+
+/** A companion's rank cap grows with ascension level — the mechanism that lets gacha duplicates fuel permanent power past the old fixed rank-5 ceiling. */
+export function companionMaxRank(ascensionLevel: number): number {
+  return MAX_COMPANION_UPGRADE_RANK + ascensionLevel;
 }
 
 export const useMetaStore = create<MetaStore>((set) => ({
@@ -184,12 +212,25 @@ export const useMetaStore = create<MetaStore>((set) => ({
   upgradeCompanion: (companionId) =>
     set((state) => {
       const currentRank = state.companionUpgrades[companionId] ?? 0;
-      if (currentRank >= MAX_COMPANION_UPGRADE_RANK) return state;
+      const maxRank = companionMaxRank(state.companionAscension[companionId] ?? 0);
+      if (currentRank >= maxRank) return state;
       const cost = companionUpgradeCost(currentRank);
       if (state.currency < cost) return state;
       return {
         currency: state.currency - cost,
         companionUpgrades: { ...state.companionUpgrades, [companionId]: currentRank + 1 },
+      };
+    }),
+  ascendCompanion: (companionId) =>
+    set((state) => {
+      const currentLevel = state.companionAscension[companionId] ?? 0;
+      if (currentLevel >= MAX_ASCENSION_LEVEL) return state;
+      const cost = ascensionShardCost(currentLevel);
+      const shards = state.companionShards[companionId] ?? 0;
+      if (shards < cost) return state;
+      return {
+        companionShards: { ...state.companionShards, [companionId]: shards - cost },
+        companionAscension: { ...state.companionAscension, [companionId]: currentLevel + 1 },
       };
     }),
   upgradeForge: () =>
@@ -259,10 +300,11 @@ export const useMetaStore = create<MetaStore>((set) => ({
     }),
 }));
 
-/** Shared by pullGachaSingle/pullGachaMulti: deducts the pull cost, unlocks any new companions, refunds essence for duplicates, and stashes the results for the reveal overlay. */
+/** Shared by pullGachaSingle/pullGachaMulti: deducts the pull cost, unlocks any new companions, refunds essence + grants Ascension Shards for duplicates, and stashes the results for the reveal overlay. */
 function applyGachaResults(state: MetaStore, results: GachaPullResult[], totalCost: number): Partial<MetaStore> {
   const unlocked = new Set(state.unlockedCompanionIds);
   const discoveredCompanionIds = new Set(state.discoveredCompanionIds);
+  const companionShards = { ...state.companionShards };
   let refund = 0;
 
   for (const result of results) {
@@ -271,6 +313,8 @@ function applyGachaResults(state: MetaStore, results: GachaPullResult[], totalCo
       unlocked.add(result.companion.id);
     } else {
       refund += Math.round(GACHA_SINGLE_PULL_COST * GACHA_DUPLICATE_REFUND_FRACTION);
+      const id = result.companion.id;
+      companionShards[id] = (companionShards[id] ?? 0) + ASCENSION_SHARD_YIELD[result.companion.rarity];
     }
   }
 
@@ -278,6 +322,7 @@ function applyGachaResults(state: MetaStore, results: GachaPullResult[], totalCo
     currency: state.currency - totalCost + refund,
     unlockedCompanionIds: [...unlocked],
     discoveredCompanionIds: [...discoveredCompanionIds],
+    companionShards,
     lastGachaResults: results,
   };
 }
