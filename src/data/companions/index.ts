@@ -8,6 +8,9 @@ import { campBard } from './campBard';
 import { emberWisp } from './emberWisp';
 import { crimsonDragoon } from './crimsonDragoon';
 import { astralSeraph } from './astralSeraph';
+import { ironVanguard } from './ironVanguard';
+import { hearthkeeper } from './hearthkeeper';
+import { warlordsAegis } from './warlordsAegis';
 
 export const companionRegistry = new Registry<CompanionDefinition>();
 
@@ -20,6 +23,9 @@ companionRegistry.registerAll([
   emberWisp,
   crimsonDragoon,
   astralSeraph,
+  ironVanguard,
+  hearthkeeper,
+  warlordsAegis,
 ]);
 
 export const allCompanions = companionRegistry.all();

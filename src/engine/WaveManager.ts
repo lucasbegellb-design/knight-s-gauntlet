@@ -21,6 +21,11 @@ import type { RelicModifier } from '../data/relic.types';
 const WAVE_CLEAR_HEAL_FRACTION = 0.45;
 const PHOENIX_HEART_ID = 'phoenix_heart';
 const PHOENIX_REVIVE_HP_FRACTION = 0.5;
+const BROKEN_BLADE_ID = 'broken_blade';
+/** Party damageMultiplier granted per Broken Part collected this run, while Broken Blade is owned. */
+const BROKEN_BLADE_PER_PART = 0.01;
+/** Caps Broken Blade's scaling so a very long run doesn't compound damage without bound. */
+const BROKEN_BLADE_PART_CAP = 25;
 export const MAX_ACTIVE_COMPANIONS = 3;
 export const MAX_ACTIVE_SPELLS = 2;
 /** Permanent equipment power boost per Forge level (meta-progression). */
@@ -386,11 +391,21 @@ export class WaveManager {
       .filter((def) => def.role === 'support' && def.auraModifier)
       .map((def) => ({ modifiers: [def.auraModifier as RelicModifier], count: 1 }));
 
+    const brokenBladeSources: ModifierSource[] = this.state.ownedRelics.some((owned) => owned.id === BROKEN_BLADE_ID)
+      ? [
+          {
+            modifiers: [{ kind: 'damageMultiplier', value: Math.min(this.state.brokenParts, BROKEN_BLADE_PART_CAP) * BROKEN_BLADE_PER_PART }],
+            count: 1,
+          },
+        ]
+      : [];
+
     return aggregateModifiers([
       ...relicSources,
       ...equipmentSources,
       ...passiveSpellSources,
       ...companionAuraSources,
+      ...brokenBladeSources,
       talentSource,
       classSource,
       forgeWeaponSource,
@@ -404,12 +419,15 @@ export class WaveManager {
 
     for (const owned of this.state.companions) {
       const def = companionRegistry.get(owned.id);
+      // Relic/equipment/talent bonuses now reach companions too, not just the hero — mirrors buildWaveEngine's hero construction.
+      const scaledMaxHp = Math.round(def.maxHp * (1 + modifiers.maxHpBonusPercentSum));
+      const scaledIntervalMs = Math.round(def.attackIntervalMs / (1 + modifiers.attackSpeedMultiplierSum));
       const carried = this.pendingCompanionHp.get(owned.id) ?? owned.hp;
 
       let finalHp = 0;
       if (carried > 0) {
-        const beforeHeal = Math.min(def.maxHp, carried);
-        finalHp = Math.min(def.maxHp, beforeHeal + Math.round((def.maxHp - beforeHeal) * healFraction));
+        const beforeHeal = Math.min(scaledMaxHp, carried);
+        finalHp = Math.min(scaledMaxHp, beforeHeal + Math.round((scaledMaxHp - beforeHeal) * healFraction));
       }
       owned.hp = finalHp;
       if (finalHp <= 0) continue;
@@ -418,7 +436,7 @@ export class WaveManager {
       // across waves (maxHp never changes for a companion, unlike the hero's level-driven growth).
       const rankBonus = 1 + (this.metaBonuses.companionUpgrades[owned.id] ?? 0) * COMPANION_RANK_BONUS_PER_LEVEL;
       const upgradedAttack = Math.round(def.attack * rankBonus);
-      const combatant = buildCombatant(def.id, def.name, finalHp, def.maxHp, upgradedAttack, def.attackIntervalMs);
+      const combatant = buildCombatant(def.id, def.name, finalHp, scaledMaxHp, upgradedAttack, scaledIntervalMs);
       allies.push({
         combatant,
         role: def.role,

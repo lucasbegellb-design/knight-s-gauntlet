@@ -18,6 +18,7 @@ import { ironSkin } from './ironSkin';
 import { guardiansBlessing } from './guardiansBlessing';
 import { thornmailWard } from './thornmailWard';
 import { phoenixHeart } from './phoenixHeart';
+import { brokenBlade } from './brokenBlade';
 import { firePackRelics } from './firePack';
 import { critPackRelics } from './critPack';
 import { bloodPackRelics } from './bloodPack';
@@ -46,6 +47,7 @@ relicRegistry.registerAll([
   guardiansBlessing,
   thornmailWard,
   phoenixHeart,
+  brokenBlade,
   ...firePackRelics,
   ...critPackRelics,
   ...bloodPackRelics,
