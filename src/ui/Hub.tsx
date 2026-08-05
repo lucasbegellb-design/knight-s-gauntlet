@@ -14,6 +14,7 @@ import { forgeWeapon, forgeWeaponUpgradeCost, resolveForgeWeaponModifiers, MAX_F
 import { GachaTab } from './GachaTab';
 import { GachaReveal } from './GachaReveal';
 import { WorldTab } from './WorldTab';
+import { KingdomTab } from './KingdomTab';
 import { IdleEssenceBanner } from './IdleEssenceBanner';
 
 const MODIFIER_LABEL: Record<string, string> = {
@@ -34,17 +35,26 @@ const BRANCH_LABEL: Record<TalentBranch, string> = {
   economy: 'Economy',
 };
 
-const TABS = ['talents', 'forge', 'gacha', 'companions', 'grimoire', 'world'] as const;
+const TABS = ['talents', 'forge', 'gacha', 'companions', 'kingdom', 'grimoire', 'world'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   talents: 'Talents',
   forge: 'Forge',
   gacha: 'Gacha',
   companions: 'Companions',
+  kingdom: 'Kingdom',
   grimoire: 'Grimoire',
   world: 'World',
 };
-const TAB_ICON: Record<Tab, string> = { talents: '✨', forge: '🔨', gacha: '🔮', companions: '🤝', grimoire: '📖', world: '🗺️' };
+const TAB_ICON: Record<Tab, string> = {
+  talents: '✨',
+  forge: '🔨',
+  gacha: '🔮',
+  companions: '🤝',
+  kingdom: '🏰',
+  grimoire: '📖',
+  world: '🗺️',
+};
 
 function TalentsTab() {
   const currency = useMetaStore((s) => s.currency);
@@ -323,6 +333,7 @@ export function Hub() {
       {tab === 'forge' && <ForgeTab />}
       {tab === 'gacha' && <GachaTab />}
       {tab === 'companions' && <CompanionsTab />}
+      {tab === 'kingdom' && <KingdomTab />}
       {tab === 'grimoire' && <GrimoireTab />}
       {tab === 'world' && <WorldTab />}
 
