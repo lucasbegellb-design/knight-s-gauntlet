@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { useMetaStore, forgeUpgradeCost, companionUpgradeCost, MAX_FORGE_LEVEL, MAX_COMPANION_UPGRADE_RANK } from '../store/metaStore';
+import {
+  useMetaStore,
+  forgeUpgradeCost,
+  companionUpgradeCost,
+  ascensionShardCost,
+  companionMaxRank,
+  MAX_FORGE_LEVEL,
+  MAX_COMPANION_UPGRADE_RANK,
+  MAX_ASCENSION_LEVEL,
+} from '../store/metaStore';
 import { costForRank } from '../engine/talents';
 import { allTalents } from '../data/talents';
 import type { TalentBranch } from '../data/talent.types';
@@ -171,10 +180,17 @@ function CompanionsTab() {
   const discoveredCompanionIds = useMetaStore((s) => s.discoveredCompanionIds);
   const companionUpgrades = useMetaStore((s) => s.companionUpgrades);
   const upgradeCompanion = useMetaStore((s) => s.upgradeCompanion);
+  const companionShards = useMetaStore((s) => s.companionShards);
+  const companionAscension = useMetaStore((s) => s.companionAscension);
+  const ascendCompanion = useMetaStore((s) => s.ascendCompanion);
 
   return (
     <div className="hub-card">
       <div className="hub-card-title">Companion Collection</div>
+      <div className="hub-item-description">
+        Duplicate summons grant Ascension Shards for that character, raising their rank cap beyond {MAX_COMPANION_UPGRADE_RANK} — the
+        Gacha keeps paying off long after your roster is complete.
+      </div>
       {allCompanions.map((companion) => {
         const discovered = discoveredCompanionIds.includes(companion.id);
         if (!discovered) {
@@ -185,9 +201,16 @@ function CompanionsTab() {
             </div>
           );
         }
+        const ascensionLevel = companionAscension[companion.id] ?? 0;
+        const maxRank = companionMaxRank(ascensionLevel);
         const rank = companionUpgrades[companion.id] ?? 0;
-        const maxed = rank >= MAX_COMPANION_UPGRADE_RANK;
+        const maxed = rank >= maxRank;
         const cost = companionUpgradeCost(rank);
+
+        const shards = companionShards[companion.id] ?? 0;
+        const ascensionMaxed = ascensionLevel >= MAX_ASCENSION_LEVEL;
+        const ascensionCost = ascensionShardCost(ascensionLevel);
+
         return (
           <div key={companion.id} className="hub-row-item">
             <GeneratedPortrait category="companions_illustration" id={companion.id} size={40} />
@@ -195,10 +218,12 @@ function CompanionsTab() {
               <div className="hub-item-name">
                 {companion.name} <span className="hub-item-rank">({companion.role})</span>{' '}
                 <span className="hub-item-rank">
-                  rank {rank}/{MAX_COMPANION_UPGRADE_RANK}
+                  rank {rank}/{maxRank}
                 </span>
+                {ascensionLevel > 0 && <span className="hub-item-rank">· ascension {ascensionLevel}</span>}
               </div>
               <div className="hub-item-description">{companion.description}</div>
+              <div className="hub-item-description">💎 {shards} ascension shards</div>
             </div>
             <button
               type="button"
@@ -207,6 +232,14 @@ function CompanionsTab() {
               onClick={() => upgradeCompanion(companion.id)}
             >
               {maxed ? 'Maxed' : `${cost}`}
+            </button>
+            <button
+              type="button"
+              className="hub-buy-button"
+              disabled={ascensionMaxed || shards < ascensionCost}
+              onClick={() => ascendCompanion(companion.id)}
+            >
+              {ascensionMaxed ? 'Maxed' : `Ascend (${ascensionCost} 💎)`}
             </button>
           </div>
         );
