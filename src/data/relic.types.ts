@@ -31,7 +31,7 @@ export interface RelicModifier {
   value: number;
 }
 
-export type RelicTag = 'fire' | 'crit' | 'blood' | 'economy' | 'speed' | 'vitality';
+export type RelicTag = 'fire' | 'crit' | 'blood' | 'economy' | 'speed' | 'vitality' | 'forge';
 
 export type RelicStacking = 'stackable' | 'unique';
 
@@ -43,6 +43,10 @@ export interface RelicDefinition {
   description: string;
   stacking: RelicStacking;
   modifiers: RelicModifier[];
-  /** Bespoke, non-declarative behavior for capstone relics (e.g. a one-time revive). Handled by special-cased engine code, not the modifier pipeline. */
-  special?: 'phoenixRevive';
+  /**
+   * Bespoke, non-declarative behavior for capstone relics. Handled by special-cased engine code, not the modifier pipeline.
+   * - `phoenixRevive`: one-time revive at half health (CombatEngine.ts + WaveManager.tryPhoenixRevive).
+   * - `brokenBladeDamage`: damageMultiplier that scales with this run's Broken Parts total (WaveManager.computeModifiers).
+   */
+  special?: 'phoenixRevive' | 'brokenBladeDamage';
 }

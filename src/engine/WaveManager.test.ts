@@ -214,6 +214,51 @@ describe('WaveManager', () => {
     expect(manager.getRunState().isGameOver).toBe(true);
   });
 
+  it('scales Broken Blade damage with this run Broken Parts total, benefiting hero and companion attacks alike', () => {
+    expect(relicRegistry.get('broken_blade').special).toBe('brokenBladeDamage');
+
+    const manager = new WaveManager(testHero, 1);
+    const computeModifiers = (manager as unknown as { computeModifiers: () => { damageMultiplierSum: number } })
+      .computeModifiers.bind(manager);
+
+    expect(computeModifiers().damageMultiplierSum).toBe(0);
+
+    stateOf(manager).ownedRelics = [{ id: 'broken_blade', count: 1 }];
+    stateOf(manager).brokenParts = 10;
+    expect(computeModifiers().damageMultiplierSum).toBeCloseTo(0.1); // 10 parts * 1% per part
+
+    stateOf(manager).brokenParts = 500;
+    expect(computeModifiers().damageMultiplierSum).toBeCloseTo(0.25); // capped at 25 parts counted
+  });
+
+  it('applies relic damage modifiers to companion attacks too, not just the hero', () => {
+    // A hero that never acts (huge interval, zero attack) isolates the companion's hit for inspection.
+    const passiveHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 10_000, attack: 0, attackIntervalMs: 100_000 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(passiveHero, 1);
+    stateOf(manager).companions = [{ id: 'roguish_blade', hp: 30 }];
+    stateOf(manager).ownedRelics = [{ id: 'broken_blade', count: 1 }];
+    stateOf(manager).brokenParts = 25;
+    rebuildEngine(manager);
+
+    // Companion base attack (5) is unchanged pre-modifier — the +25% damageMultiplier now
+    // applies at hit-resolution time (CombatEngine.computeAttackDamage), not baked into the stat.
+    const buffedAllyAttack = manager
+      .getCombatState()
+      .allies.find((a) => a.combatant.id === 'roguish_blade')?.combatant.attack;
+    expect(buffedAllyAttack).toBe(5);
+
+    const events = manager.tick(1000);
+    const allyHit = events.find(
+      (e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'roguish_blade',
+    );
+    expect(allyHit && allyHit.type === 'combat' && allyHit.event.type === 'attack' && allyHit.event.damage).toBe(6); // round(5 * 1.25)
+  });
+
   it('recruits a companion into the roster and fields it as an ally in combat', () => {
     const manager = new WaveManager(testHero, 1);
     let recruited = false;

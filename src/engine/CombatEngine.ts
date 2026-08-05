@@ -24,30 +24,33 @@ function pickWeightedUnit(pool: { unit: Combatant; weight: number }[], rng: Rng)
  * future UI) only read `getState()` and react to the events `tick()`
  * returns.
  *
- * Only the hero's own attacks consult `heroModifiers` (relic/equipment
- * bonuses); monster attacks and ally attacks always use their flat base
- * damage. With `NEUTRAL_MODIFIERS` and no allies/spells (the defaults),
- * behavior is identical to a build with none of Phase 3/4's systems.
+ * `partyModifiers` (relic/equipment/talent/companion-aura bonuses,
+ * aggregated once per wave by WaveManager) apply to every attack the party
+ * lands — the hero's own attacks and non-healer allies' attacks alike —
+ * plus shared party-wide effects (execute, lifesteal, reflect). Monster
+ * attacks always use flat base damage. With `NEUTRAL_MODIFIERS` and no
+ * allies/spells (the defaults), behavior is identical to a build with none
+ * of Phase 3/4's systems.
  */
 export class CombatEngine {
   private readonly state: CombatState;
   private readonly rng: Rng;
   private readonly heroId: string;
-  private readonly heroModifiers: AggregatedModifiers;
+  private readonly partyModifiers: AggregatedModifiers;
   private readonly spells: SpellCaster[];
 
   constructor(
     hero: Combatant,
     monster: Combatant,
     seed = 1,
-    heroModifiers: AggregatedModifiers = NEUTRAL_MODIFIERS,
+    partyModifiers: AggregatedModifiers = NEUTRAL_MODIFIERS,
     allies: AllyUnit[] = [],
     spells: SpellCaster[] = [],
   ) {
     this.state = { hero, monster, allies, elapsedMs: 0, isOver: false, winnerId: null };
     this.rng = new Rng(seed);
     this.heroId = hero.id;
-    this.heroModifiers = heroModifiers;
+    this.partyModifiers = partyModifiers;
     this.spells = spells;
   }
 
@@ -112,14 +115,14 @@ export class CombatEngine {
   private resolveHeroTurn(hero: Combatant, monster: Combatant, events: CombatEvent[]): void {
     hero.nextAttackAt += hero.attackIntervalMs;
 
-    const totalDamage = this.computeHeroDamage(hero, monster, events);
+    const totalDamage = this.computeAttackDamage(hero, monster, events);
     monster.hp = Math.max(0, monster.hp - totalDamage);
     events.push({ type: 'attack', attackerId: hero.id, targetId: monster.id, damage: totalDamage, targetHpAfter: monster.hp });
 
     this.applyExecute(monster, events);
     this.applyLifesteal(hero, totalDamage, events);
 
-    if (monster.hp <= 0) {
+    if (monster.hp <= 0 && !this.state.isOver) {
       events.push({ type: 'death', combatantId: monster.id });
       this.endCombat(hero.id, events);
     }
@@ -139,9 +142,7 @@ export class CombatEngine {
     target.hp = Math.max(0, target.hp - damage);
     events.push({ type: 'attack', attackerId: monster.id, targetId: target.id, damage, targetHpAfter: target.hp });
 
-    if (isHeroTarget) {
-      this.applyReflect(monster, damage, events);
-    }
+    this.applyReflect(monster, damage, events);
 
     if (target.hp <= 0) {
       events.push({ type: 'death', combatantId: target.id });
@@ -174,14 +175,18 @@ export class CombatEngine {
     const monster = this.state.monster;
     if (monster.hp <= 0) return;
 
-    const damage = ally.combatant.attack;
+    const damage = this.computeAttackDamage(ally.combatant, monster, events);
     monster.hp = Math.max(0, monster.hp - damage);
     events.push({ type: 'attack', attackerId: ally.combatant.id, targetId: monster.id, damage, targetHpAfter: monster.hp });
+    this.applyExecute(monster, events);
+    this.applyLifesteal(ally.combatant, damage, events);
 
     if (ally.role === 'summoner' && ally.doubleStrikeChance > 0 && monster.hp > 0 && this.rng.next() < ally.doubleStrikeChance) {
-      const bonusDamage = ally.combatant.attack;
+      const bonusDamage = this.computeAttackDamage(ally.combatant, monster, events);
       monster.hp = Math.max(0, monster.hp - bonusDamage);
       events.push({ type: 'attack', attackerId: ally.combatant.id, targetId: monster.id, damage: bonusDamage, targetHpAfter: monster.hp });
+      this.applyExecute(monster, events);
+      this.applyLifesteal(ally.combatant, bonusDamage, events);
     }
 
     if (monster.hp <= 0 && !this.state.isOver) {
@@ -214,9 +219,9 @@ export class CombatEngine {
     }
   }
 
-  /** Computes the hero's damage for this hit, applying crit/burn modifiers and pushing their flavor events. */
-  private computeHeroDamage(attacker: Combatant, target: Combatant, events: CombatEvent[]): number {
-    const mod = this.heroModifiers;
+  /** Computes an attacker's (hero or non-healer ally) damage for this hit, applying crit/burn modifiers and pushing their flavor events. */
+  private computeAttackDamage(attacker: Combatant, target: Combatant, events: CombatEvent[]): number {
+    const mod = this.partyModifiers;
     let damage = attacker.attack * (1 + mod.damageMultiplierSum) + mod.flatDamageBonusSum;
 
     let isCrit = false;
@@ -240,7 +245,7 @@ export class CombatEngine {
   }
 
   private applyExecute(target: Combatant, events: CombatEvent[]): void {
-    const threshold = this.heroModifiers.executeThresholdSum;
+    const threshold = this.partyModifiers.executeThresholdSum;
     if (threshold > 0 && target.hp > 0 && target.hp / target.maxHp <= threshold) {
       target.hp = 0;
       events.push({ type: 'execute', targetId: target.id });
@@ -248,7 +253,7 @@ export class CombatEngine {
   }
 
   private applyLifesteal(attacker: Combatant, damageDealt: number, events: CombatEvent[]): void {
-    const percent = this.heroModifiers.lifestealPercentSum;
+    const percent = this.partyModifiers.lifestealPercentSum;
     if (percent <= 0) return;
 
     const healAmount = Math.round(damageDealt * percent);
@@ -258,9 +263,9 @@ export class CombatEngine {
     }
   }
 
-  /** `attacker` here is the monster; reflect punishes it for attacking a reflect-carrying hero. */
+  /** `attacker` here is the monster; reflect punishes it for attacking any reflect-carrying party member (hero or ally). */
   private applyReflect(attacker: Combatant, damageTaken: number, events: CombatEvent[]): void {
-    const percent = this.heroModifiers.reflectDamagePercentSum;
+    const percent = this.partyModifiers.reflectDamagePercentSum;
     if (percent <= 0 || attacker.hp <= 0) return;
 
     const reflectDamage = Math.round(damageTaken * percent);

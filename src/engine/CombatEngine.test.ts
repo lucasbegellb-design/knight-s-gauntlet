@@ -300,6 +300,82 @@ describe('CombatEngine with allies', () => {
     expect(engine.getState().winnerId).toBe('goblin_grunt');
   });
 
+  it('applies party-wide damage modifiers to a non-healer ally attack, not just the hero', () => {
+    const mods = makeModifiers({ damageMultiplierSum: 1, flatDamageBonusSum: 2 });
+    const ally = makeAlly();
+    const engine = new CombatEngine(
+      makeHero({ nextAttackAt: 999_999 }),
+      makeMonster({ maxHp: 100, hp: 100 }),
+      1,
+      mods,
+      [ally],
+    );
+
+    const events = engine.tick(1000);
+
+    // base ally attack 3 * (1 + 1) + 2 = 8
+    const allyAttack = events.find((e) => e.type === 'attack' && e.attackerId === 'ally');
+    expect(allyAttack).toMatchObject({ damage: 8 });
+  });
+
+  it('lets a guaranteed crit land on an ally attack too', () => {
+    const mods = makeModifiers({ critChanceSum: 1 });
+    const ally = makeAlly();
+    const engine = new CombatEngine(
+      makeHero({ nextAttackAt: 999_999 }),
+      makeMonster({ maxHp: 100, hp: 100 }),
+      1,
+      mods,
+      [ally],
+    );
+
+    const events = engine.tick(1000);
+
+    expect(events.some((e) => e.type === 'critHit')).toBe(true);
+    const allyAttack = events.find((e) => e.type === 'attack' && e.attackerId === 'ally');
+    expect(allyAttack).toMatchObject({ damage: 5 }); // 3 * BASE_CRIT_MULTIPLIER (1.5), rounded
+  });
+
+  it('lets an ally attack trigger lifesteal, healing the ally itself', () => {
+    const mods = makeModifiers({ lifestealPercentSum: 0.5 });
+    const ally = makeAlly({
+      combatant: { id: 'ally', name: 'Ally', maxHp: 20, hp: 10, attack: 4, attackIntervalMs: 1000, nextAttackAt: 1000 },
+    });
+    const engine = new CombatEngine(
+      makeHero({ nextAttackAt: 999_999 }),
+      makeMonster({ maxHp: 100, hp: 100 }),
+      1,
+      mods,
+      [ally],
+    );
+
+    const events = engine.tick(1000);
+
+    expect(events.some((e) => e.type === 'lifesteal' && e.healerId === 'ally')).toBe(true);
+    expect(engine.getState().allies[0]?.combatant.hp).toBe(12); // healed by 50% of 4 damage dealt
+  });
+
+  it('reflects damage off the monster even when it targets an ally instead of the hero', () => {
+    const mods = makeModifiers({ reflectDamagePercentSum: 0.5 });
+    const ally = makeAlly({
+      tauntWeight: 1000,
+      combatant: { id: 'ally', name: 'Ally', maxHp: 100, hp: 100, attack: 0, attackIntervalMs: 999_999, nextAttackAt: 999_999 },
+    });
+    const engine = new CombatEngine(
+      makeHero({ nextAttackAt: 999_999 }),
+      makeMonster({ attack: 10, maxHp: 100, hp: 100, nextAttackAt: 1000 }),
+      1,
+      mods,
+      [ally],
+    );
+
+    const events = engine.tick(1000);
+
+    const reflectEvent = events.find((e) => e.type === 'reflect');
+    expect(reflectEvent).toMatchObject({ damagedId: 'goblin_grunt', damage: 5 });
+    expect(engine.getState().monster.hp).toBe(95);
+  });
+
   it('favors high taunt-weight allies (e.g. tanks) over the hero across many seeds', () => {
     let heroHits = 0;
     let tankHits = 0;
