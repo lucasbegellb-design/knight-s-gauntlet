@@ -7,21 +7,23 @@ import { writeFile, mkdir, access } from 'node:fs/promises';
 import path from 'node:path';
 import { manifest } from './manifest.mjs';
 
-/** Default style for hero/monster/icon entries (no `style` field) — unchanged from the original pipeline so existing assets stay reproducible. */
+/** Default style for hero/monster/icon entries (no `style` field) — Brave Frontier's actual look: saturated anime-chibi proportions, bold clean line art, dramatic rim lighting, not a generic "JRPG sprite" wash. */
 const CHIBI_STYLE =
-  ', JRPG sprite, Final Fantasy Brave Exvius style, semi-realistic chibi, clean pixel art, transparent background, game asset';
+  ', Brave Frontier gacha JRPG chibi sprite, saturated anime color palette, bold clean line art, oversized expressive head-to-body ratio, dramatic rim lighting, sharp clean edges, high detail, transparent background, game asset';
 /** Gacha character menu splash art — a nicer, more detailed illustration than the in-game chibi style. */
 const ILLUSTRATION_STYLE =
-  ', beautiful gacha character splash art, Brave Frontier style illustration, vibrant colors, detailed fantasy character portrait, dynamic pose, high quality game art, clean simple background';
+  ', beautiful gacha character splash art, Brave Frontier style illustration, saturated anime colors, bold dynamic line art, dramatic rim lighting and glow effects, detailed fantasy character portrait, dynamic heroic pose, high quality game art, clean simple background';
 /** Gacha character combat sprite — deliberately distinct from the illustration: a retro pixel-art battle sprite. */
 const PIXEL_ART_STYLE =
-  ', 16-bit pixel art sprite, retro SNES-era JRPG battle sprite, limited color palette, crisp pixelated edges, no anti-aliasing, game sprite, transparent background';
+  ', 16-bit pixel art sprite, retro SNES-era JRPG battle sprite, saturated anime-inspired color palette, limited color palette, crisp pixelated edges, no anti-aliasing, game sprite, transparent background';
 const STYLE_BY_NAME = { illustration: ILLUSTRATION_STYLE, pixelArt: PIXEL_ART_STYLE };
 const OUTPUT_ROOT = path.resolve(process.cwd(), 'public/game-assets');
 const FAILURE_LOG = path.resolve(process.cwd(), 'scripts/asset-gen/failures.json');
 const HORDE_BASE = 'https://aihorde.net/api/v2';
 const HORDE_API_KEY = '0000000000';
 const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt';
+/** `flux` is Pollinations' higher-quality model (better prompt adherence/detail than the default fast model). */
+const POLLINATIONS_MODEL = 'flux';
 const POLLINATIONS_DELAY_MS = 25000;
 
 function buildPrompt(entry) {
@@ -43,7 +45,7 @@ async function fileExists(p) {
 }
 
 async function generateViaPollinations(prompt, { retries = 3, backoffMs = 20000 } = {}) {
-  const url = `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`;
+  const url = `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&model=${POLLINATIONS_MODEL}`;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetch(url);
     if (res.ok) return Buffer.from(await res.arrayBuffer());

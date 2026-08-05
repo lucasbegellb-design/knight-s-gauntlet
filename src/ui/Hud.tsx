@@ -1,20 +1,33 @@
 import { useRunStore, type CombatSpeed } from '../store/runStore';
 import { useMetaStore } from '../store/metaStore';
 import { RARITY_COLOR } from '../data/rarity';
+import type { MonsterTier } from '../data/monster.types';
 
 const SPEEDS: CombatSpeed[] = [1, 2, 4];
 const EQUIPMENT_SLOTS = ['weapon', 'armor', 'accessory'] as const;
 
-const TIER_LABEL: Record<string, string> = {
+const TIER_LABEL: Record<MonsterTier, string> = {
   normal: '',
   miniboss: 'MINI-BOSS',
   boss: 'BOSS',
+  megaboss: 'MEGABOSS',
+  ultraboss: 'ULTRABOSS',
 };
 
-const TIER_COLOR: Record<string, string> = {
+const TIER_COLOR: Record<MonsterTier, string> = {
   normal: '#8b93a1',
   miniboss: '#e67e22',
   boss: '#e74c3c',
+  megaboss: '#ff5555',
+  ultraboss: '#f1c40f',
+};
+
+const TIER_BADGE_CLASS: Record<MonsterTier, string> = {
+  normal: '',
+  miniboss: '',
+  boss: '',
+  megaboss: 'tier-badge-megaboss',
+  ultraboss: 'tier-badge-ultraboss',
 };
 
 const ROLE_COLOR: Record<string, string> = {
@@ -24,6 +37,14 @@ const ROLE_COLOR: Record<string, string> = {
   support: '#8e44ad',
   summoner: '#16a085',
 };
+
+/** Large HP values (wave 500+ under the escalation curve) read better as "12.3k"/"1.2M" than a long digit string. */
+function formatNumber(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 10_000) return `${Math.round(value / 1000)}k`;
+  if (value >= 1_000) return `${(value / 1000).toFixed(1)}k`;
+  return `${value}`;
+}
 
 function Bar({ value, max, color }: { value: number; max: number; color: string }) {
   const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
@@ -45,14 +66,17 @@ export function Hud() {
             Wave {state.waveNumber} <span className="hud-sublabel">— {state.zoneName}</span>
           </div>
           {state.monsterTier !== 'normal' && (
-            <div className="tier-badge" style={{ color: TIER_COLOR[state.monsterTier] }}>
+            <div
+              className={`tier-badge ${TIER_BADGE_CLASS[state.monsterTier]}`}
+              style={{ color: TIER_COLOR[state.monsterTier] }}
+            >
               {TIER_LABEL[state.monsterTier]}
             </div>
           )}
           <div className="hud-sublabel">{state.monsterName}</div>
           <Bar value={state.monsterHp} max={state.monsterMaxHp} color="#e74c3c" />
           <div className="hud-value">
-            {state.monsterHp}/{state.monsterMaxHp}
+            {formatNumber(state.monsterHp)}/{formatNumber(state.monsterMaxHp)}
           </div>
         </div>
 
@@ -61,11 +85,11 @@ export function Hud() {
           <div className="hud-sublabel">{state.heroClassName}</div>
           <Bar value={state.heroHp} max={state.heroMaxHp} color="#2ecc71" />
           <div className="hud-value">
-            {state.heroHp}/{state.heroMaxHp} HP
+            {formatNumber(state.heroHp)}/{formatNumber(state.heroMaxHp)} HP
           </div>
           <Bar value={state.heroXp} max={state.heroXpToNext} color="#3498db" />
           <div className="hud-value">
-            {state.heroXp}/{state.heroXpToNext} XP
+            {formatNumber(state.heroXp)}/{formatNumber(state.heroXpToNext)} XP
           </div>
         </div>
       </div>
@@ -84,6 +108,17 @@ export function Hud() {
         ))}
         {state.brokenParts > 0 && <span className="hud-sublabel">⚙️ {state.brokenParts} broken parts</span>}
         <span className="gold-display">🪙 {state.gold} gold</span>
+        <button
+          type="button"
+          className="flee-button"
+          onClick={() => {
+            if (window.confirm(`Abandon this run at wave ${state.waveNumber}? Your gold and Broken Parts will still be banked.`)) {
+              state.requestAbandonRun();
+            }
+          }}
+        >
+          Flee
+        </button>
       </div>
 
       <div className="hud-row">
@@ -110,7 +145,7 @@ export function Hud() {
               style={{ borderColor: ROLE_COLOR[companion.role], color: companion.hp > 0 ? '#f3f4f6' : '#5c5f6a' }}
             >
               <span style={{ color: ROLE_COLOR[companion.role] }}>{companion.role}</span> {companion.name}{' '}
-              {companion.hp > 0 ? `${companion.hp}/${companion.maxHp}` : '(fallen)'}
+              {companion.hp > 0 ? `${formatNumber(companion.hp)}/${formatNumber(companion.maxHp)}` : '(fallen)'}
             </div>
           ))}
         </div>
@@ -149,6 +184,7 @@ export function Hud() {
 
 export function GameOverOverlay() {
   const isGameOver = useRunStore((state) => state.isGameOver);
+  const endReason = useRunStore((state) => state.endReason);
   const waveNumber = useRunStore((state) => state.waveNumber);
   const setScreen = useMetaStore((state) => state.setScreen);
 
@@ -156,8 +192,10 @@ export function GameOverOverlay() {
 
   return (
     <div className="game-over-overlay">
-      <div className="game-over-title">Run Over</div>
-      <div className="game-over-subtitle">Fell on wave {waveNumber}</div>
+      <div className="game-over-title">{endReason === 'abandoned' ? 'Run Retreated' : 'Run Over'}</div>
+      <div className="game-over-subtitle">
+        {endReason === 'abandoned' ? `Retreated on wave ${waveNumber}` : `Fell on wave ${waveNumber}`}
+      </div>
       <button type="button" className="restart-button" onClick={() => setScreen('hub')}>
         Return to Camp
       </button>

@@ -45,6 +45,8 @@ export interface RunSnapshot {
   heroHp: number;
   heroMaxHp: number;
   isGameOver: boolean;
+  /** Why the run ended — distinguishes a voluntary flee from a death, for the game-over overlay copy. */
+  endReason: 'death' | 'abandoned';
   gold: number;
   brokenParts: number;
   ownedRelics: OwnedRelicDisplay[];
@@ -60,9 +62,12 @@ interface RunStore extends RunSnapshot {
   speed: CombatSpeed;
   /** Bumped whenever the player picks a loot option; the scene watches this to apply the pick. */
   lootChoiceRequest: { token: number; index: number } | null;
+  /** Bumped whenever the player chooses to flee a run in progress; the scene watches this to end it. */
+  abandonRunRequest: { token: number } | null;
   setSnapshot: (snapshot: RunSnapshot) => void;
   setSpeed: (speed: CombatSpeed) => void;
   requestLootChoice: (index: number) => void;
+  requestAbandonRun: () => void;
 }
 
 const initialSnapshot: RunSnapshot = {
@@ -79,6 +84,7 @@ const initialSnapshot: RunSnapshot = {
   heroHp: 0,
   heroMaxHp: 0,
   isGameOver: false,
+  endReason: 'death',
   gold: 0,
   brokenParts: 0,
   ownedRelics: [],
@@ -94,8 +100,10 @@ export const useRunStore = create<RunStore>((set) => ({
   ...initialSnapshot,
   speed: 1,
   lootChoiceRequest: null,
+  abandonRunRequest: null,
   setSnapshot: (snapshot) => set(snapshot),
   setSpeed: (speed) => set({ speed }),
   requestLootChoice: (index) =>
     set((state) => ({ lootChoiceRequest: { token: (state.lootChoiceRequest?.token ?? 0) + 1, index } })),
+  requestAbandonRun: () => set((state) => ({ abandonRunRequest: { token: (state.abandonRunRequest?.token ?? 0) + 1 } })),
 }));

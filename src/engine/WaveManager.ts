@@ -9,7 +9,7 @@ import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from 
 import type { HeroDefinition } from '../data/hero.types';
 import type { MonsterDefinition, MonsterTier } from '../data/monster.types';
 import type { EquipmentSlot } from '../data/equipment.types';
-import { bosses, miniBosses, normalMonsters } from '../data/monsters';
+import { allMonsters, bosses, megaBosses, miniBosses, normalMonsters, ultraBosses } from '../data/monsters';
 import { relicRegistry } from '../data/relics';
 import { equipmentRegistry } from '../data/equipment';
 import { allCompanions, companionRegistry } from '../data/companions';
@@ -86,6 +86,8 @@ export interface RunState {
   waveNumber: number;
   heroProgress: HeroProgress;
   isGameOver: boolean;
+  /** Why the run ended — distinguishes a voluntary flee (abandonRun) from a death, for UI copy. */
+  endReason: 'death' | 'abandoned';
   monsterTier: MonsterTier;
   monsterName: string;
   zoneId: string;
@@ -130,6 +132,14 @@ function buildCombatant(id: string, name: string, hp: number, maxHp: number, att
   return { id, name, hp, maxHp, attack, attackIntervalMs, nextAttackAt: attackIntervalMs };
 }
 
+const TIER_POOLS: Record<MonsterTier, MonsterDefinition[]> = {
+  normal: normalMonsters,
+  miniboss: miniBosses,
+  boss: bosses,
+  megaboss: megaBosses,
+  ultraboss: ultraBosses,
+};
+
 /**
  * Sequences an infinite run of hero-(+allies)-vs-monster fights: spawns the
  * next wave after each CombatEngine concludes, awards XP, rolls hero
@@ -171,6 +181,7 @@ export class WaveManager {
       waveNumber: 0,
       heroProgress: { level: 1, xp: 0 },
       isGameOver: false,
+      endReason: 'death',
       monsterTier: 'normal',
       monsterName: '',
       zoneId: '',
@@ -241,6 +252,17 @@ export class WaveManager {
     });
 
     return events;
+  }
+
+  /** Lets the player voluntarily end an otherwise-endless run — cashes out exactly like a normal death via the same `runOver` event/currency-deposit path. */
+  abandonRun(): WaveEvent[] {
+    if (this.state.isGameOver) return [];
+
+    this.state.isGameOver = true;
+    this.state.endReason = 'abandoned';
+    this.state.isChoosingLoot = false;
+    this.state.lootOptions = [];
+    return [{ type: 'runOver', waveNumber: this.state.waveNumber }];
   }
 
   private handleWaveCleared(events: WaveEvent[]): void {
@@ -346,10 +368,7 @@ export class WaveManager {
   /** Re-derives the content definition for whichever monster the active CombatEngine is fighting. */
   private currentMonsterDef(): MonsterDefinition {
     const monster = this.engine.getState().monster;
-    const found =
-      normalMonsters.find((m) => m.id === monster.id) ??
-      miniBosses.find((m) => m.id === monster.id) ??
-      bosses.find((m) => m.id === monster.id);
+    const found = allMonsters.find((m) => m.id === monster.id);
     if (!found) {
       throw new Error(`Unknown monster id in active combat: ${monster.id}`);
     }
@@ -467,7 +486,7 @@ export class WaveManager {
     this.state.zoneId = zone.id;
     this.state.zoneName = zone.name;
 
-    const tierPool = tier === 'boss' ? bosses : tier === 'miniboss' ? miniBosses : normalMonsters;
+    const tierPool = TIER_POOLS[tier];
     const pool = monsterPoolForWave(waveNumber, tierPool);
     const def = pickFrom(pool, this.rng);
     this.state.monsterName = def.name;

@@ -30,6 +30,18 @@ describe('rollBrokenParts', () => {
     expect(sawZero).toBe(true);
   });
 
+  it('megabosses and ultrabosses always drop at least their tier minimum, ultraboss the most of all', () => {
+    for (let seed = 1; seed <= 50; seed++) {
+      const mega = rollBrokenParts('megaboss', new Rng(seed));
+      expect(mega).toBeGreaterThanOrEqual(6);
+      expect(mega).toBeLessThanOrEqual(10);
+
+      const ultra = rollBrokenParts('ultraboss', new Rng(seed));
+      expect(ultra).toBeGreaterThanOrEqual(15);
+      expect(ultra).toBeLessThanOrEqual(25);
+    }
+  });
+
   it('minibosses drop more on average than normal monsters', () => {
     let miniTotal = 0;
     let normalTotal = 0;

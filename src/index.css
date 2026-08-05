@@ -188,6 +188,15 @@ body {
   margin-left: 6px;
 }
 
+.tier-badge-megaboss {
+  animation: legendary-pulse 1.8s ease-in-out infinite;
+}
+
+.tier-badge-ultraboss {
+  border-image: linear-gradient(90deg, #ff3b6b, #f1c40f, #2ecc71, #3498db, #9b59b6, #ff3b6b) 1;
+  animation: mythic-shimmer 3s linear infinite;
+}
+
 .hud-value {
   font-size: 11px;
   color: var(--text-dim);
@@ -326,6 +335,26 @@ body {
   font-weight: 700;
   color: var(--gold-bright);
   letter-spacing: 0.2px;
+}
+
+.flee-button {
+  background: rgba(239, 74, 99, 0.08);
+  border: 1px solid rgba(239, 74, 99, 0.4);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  transition:
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.flee-button:hover {
+  background: rgba(239, 74, 99, 0.18);
+  transform: translateY(-1px);
 }
 
 .equip-slot {
