@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { pullGacha, pullGachaMulti } from './gacha';
+import {
+  pullGacha,
+  pullGachaMulti,
+  nextPityState,
+  RARE_PITY_THRESHOLD,
+  LEGENDARY_PITY_THRESHOLD,
+  type GachaPityState,
+} from './gacha';
 import { Rng } from './rng';
 import type { CompanionDefinition } from '../data/companion.types';
 
@@ -62,5 +69,42 @@ describe('pullGachaMulti', () => {
     const owned = new Set<string>();
     pullGachaMulti(new Rng(1), pool, owned, 10);
     expect(owned.size).toBe(0);
+  });
+});
+
+describe('pity', () => {
+  it('nextPityState resets pullsSinceRare on any non-common rarity and increments it on common', () => {
+    const start: GachaPityState = { pullsSinceRare: 3, pullsSinceLegendary: 3 };
+    expect(nextPityState(start, 'common').pullsSinceRare).toBe(4);
+    expect(nextPityState(start, 'rare').pullsSinceRare).toBe(0);
+    expect(nextPityState(start, 'epic').pullsSinceRare).toBe(0);
+  });
+
+  it('nextPityState resets pullsSinceLegendary only on legendary/mythic', () => {
+    const start: GachaPityState = { pullsSinceRare: 0, pullsSinceLegendary: 5 };
+    expect(nextPityState(start, 'rare').pullsSinceLegendary).toBe(6);
+    expect(nextPityState(start, 'legendary').pullsSinceLegendary).toBe(0);
+    expect(nextPityState(start, 'mythic').pullsSinceLegendary).toBe(0);
+  });
+
+  it('forces at least a rare when pullsSinceRare is one below the threshold', () => {
+    const pity: GachaPityState = { pullsSinceRare: RARE_PITY_THRESHOLD - 1, pullsSinceLegendary: 0 };
+    for (let seed = 1; seed <= 100; seed++) {
+      const result = pullGacha(new Rng(seed), pool, new Set(), pity);
+      expect(result.companion.rarity).not.toBe('common');
+    }
+  });
+
+  it('forces at least a legendary when pullsSinceLegendary is one below the threshold', () => {
+    const pity: GachaPityState = { pullsSinceRare: 0, pullsSinceLegendary: LEGENDARY_PITY_THRESHOLD - 1 };
+    for (let seed = 1; seed <= 100; seed++) {
+      const result = pullGacha(new Rng(seed), pool, new Set(), pity);
+      expect(['legendary', 'mythic']).toContain(result.companion.rarity);
+    }
+  });
+
+  it('a long unlucky streak of pullGachaMulti pulls eventually contains a rare+', () => {
+    const results = pullGachaMulti(new Rng(42), pool, new Set(), RARE_PITY_THRESHOLD);
+    expect(results.some((r) => r.companion.rarity !== 'common')).toBe(true);
   });
 });

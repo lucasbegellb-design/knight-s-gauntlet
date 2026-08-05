@@ -1,5 +1,5 @@
 import { allCompanions } from '../data/companions';
-import { GACHA_RARITY_WEIGHTS } from '../engine/gacha';
+import { GACHA_RARITY_WEIGHTS, RARE_PITY_THRESHOLD, LEGENDARY_PITY_THRESHOLD } from '../engine/gacha';
 import { RARITY_COLOR, RARITY_LABEL, RARITY_ORDER } from '../data/rarity';
 import {
   useMetaStore,
@@ -14,6 +14,7 @@ export function GachaTab() {
   const unlockedCompanionIds = useMetaStore((s) => s.unlockedCompanionIds);
   const pullGachaSingle = useMetaStore((s) => s.pullGachaSingle);
   const pullGachaMulti = useMetaStore((s) => s.pullGachaMulti);
+  const gachaPity = useMetaStore((s) => s.gachaPity);
 
   const unlockedSet = new Set(unlockedCompanionIds);
 
@@ -31,6 +32,11 @@ export function GachaTab() {
               {RARITY_LABEL[rarity]} {GACHA_RARITY_WEIGHTS[rarity]}%
             </span>
           ))}
+        </div>
+
+        <div className="hub-item-description">
+          Pity: {gachaPity.pullsSinceRare}/{RARE_PITY_THRESHOLD} pulls to guaranteed rare+ · {gachaPity.pullsSinceLegendary}/
+          {LEGENDARY_PITY_THRESHOLD} to guaranteed legendary+
         </div>
 
         <div className="gacha-pull-buttons">
