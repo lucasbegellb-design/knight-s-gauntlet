@@ -9,6 +9,8 @@ import { forgeWeaponUpgradeCost, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWea
 import { allCompanions, STARTER_COMPANION_IDS } from '../data/companions';
 import { pullGacha, pullGachaMulti, type GachaPullResult } from '../engine/gacha';
 import { pendingIdleEssence } from '../engine/idleEssence';
+import { territoryRegistry, lordRegistry } from '../data/kingdom';
+import { MAX_TREASURY_LEVEL, treasuryUpgradeCost } from '../engine/kingdom';
 
 const STORAGE_KEY = 'knights-gauntlet-meta-v1';
 const MAX_FORGE_LEVEL = 20;
@@ -33,6 +35,10 @@ interface PersistedMeta {
   forgeWeaponLevel: number;
   /** Companions unlocked via the Gacha (src/ui/Gacha.tsx) — only these can appear in an in-run loot pool. */
   unlockedCompanionIds: string[];
+  /** Kingdom territories conquered / lords recruited (see src/data/kingdom, src/engine/kingdom.ts) — a post-max-level essence sink. */
+  conqueredTerritoryIds: string[];
+  recruitedLordIds: string[];
+  treasuryLevel: number;
   /** Timestamp (epoch ms) essence was last collected — the difference from "now" is how idle essence accrual is computed (see src/engine/idleEssence.ts). */
   lastEssenceCollectionAt: number;
   discoveredRelicIds: string[];
@@ -58,6 +64,9 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   brokenParts: 0,
   forgeWeaponLevel: 0,
   unlockedCompanionIds: [...STARTER_COMPANION_IDS],
+  conqueredTerritoryIds: [],
+  recruitedLordIds: [],
+  treasuryLevel: 0,
   lastEssenceCollectionAt: Date.now(),
   discoveredRelicIds: [],
   discoveredSpellIds: [],
@@ -103,6 +112,9 @@ interface MetaStore extends PersistedMeta {
   upgradeCompanion: (companionId: string) => void;
   upgradeForge: () => void;
   upgradeForgeWeapon: () => void;
+  conquerTerritory: (territoryId: string) => void;
+  recruitLord: (lordId: string) => void;
+  upgradeTreasury: () => void;
   discover: (kind: DiscoveryKind, id: string) => void;
   /** Results of the most recent Gacha pull, shown by the reveal overlay; cleared once acknowledged. */
   lastGachaResults: GachaPullResult[] | null;
@@ -122,6 +134,9 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     brokenParts: state.brokenParts,
     forgeWeaponLevel: state.forgeWeaponLevel,
     unlockedCompanionIds: state.unlockedCompanionIds,
+    conqueredTerritoryIds: state.conqueredTerritoryIds,
+    recruitedLordIds: state.recruitedLordIds,
+    treasuryLevel: state.treasuryLevel,
     lastEssenceCollectionAt: state.lastEssenceCollectionAt,
     discoveredRelicIds: state.discoveredRelicIds,
     discoveredSpellIds: state.discoveredSpellIds,
@@ -190,6 +205,27 @@ export const useMetaStore = create<MetaStore>((set) => ({
       const cost = forgeWeaponUpgradeCost(state.forgeWeaponLevel);
       if (state.brokenParts < cost) return state;
       return { brokenParts: state.brokenParts - cost, forgeWeaponLevel: state.forgeWeaponLevel + 1 };
+    }),
+  conquerTerritory: (territoryId) =>
+    set((state) => {
+      if (state.conqueredTerritoryIds.includes(territoryId)) return state;
+      const def = territoryRegistry.tryGet(territoryId);
+      if (!def || state.currency < def.cost) return state;
+      return { currency: state.currency - def.cost, conqueredTerritoryIds: [...state.conqueredTerritoryIds, territoryId] };
+    }),
+  recruitLord: (lordId) =>
+    set((state) => {
+      if (state.recruitedLordIds.includes(lordId)) return state;
+      const def = lordRegistry.tryGet(lordId);
+      if (!def || state.currency < def.cost) return state;
+      return { currency: state.currency - def.cost, recruitedLordIds: [...state.recruitedLordIds, lordId] };
+    }),
+  upgradeTreasury: () =>
+    set((state) => {
+      if (state.treasuryLevel >= MAX_TREASURY_LEVEL) return state;
+      const cost = treasuryUpgradeCost(state.treasuryLevel);
+      if (state.currency < cost) return state;
+      return { currency: state.currency - cost, treasuryLevel: state.treasuryLevel + 1 };
     }),
   discover: (kind, id) =>
     set((state) => {

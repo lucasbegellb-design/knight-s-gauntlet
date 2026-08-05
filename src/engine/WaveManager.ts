@@ -48,6 +48,8 @@ export interface MetaBonuses {
   classModifiers: RelicModifier[];
   /** Passive modifiers from the meta-persistent Forge Weapon's current level (see src/data/forgeWeapon.ts). */
   forgeWeaponModifiers: RelicModifier[];
+  /** Passive modifiers from conquered Kingdom territories/recruited lords/Royal Treasury level (see src/engine/kingdom.ts). */
+  kingdomModifiers: RelicModifier[];
 }
 
 export const DEFAULT_META_BONUSES: MetaBonuses = {
@@ -57,6 +59,7 @@ export const DEFAULT_META_BONUSES: MetaBonuses = {
   companionUpgrades: {},
   classModifiers: [],
   forgeWeaponModifiers: [],
+  kingdomModifiers: [],
 };
 
 export interface OwnedRelic {
@@ -397,6 +400,7 @@ export class WaveManager {
     const talentSource: ModifierSource = { modifiers: this.metaBonuses.talentModifiers, count: 1 };
     const classSource: ModifierSource = { modifiers: this.metaBonuses.classModifiers, count: 1 };
     const forgeWeaponSource: ModifierSource = { modifiers: this.metaBonuses.forgeWeaponModifiers, count: 1 };
+    const kingdomSource: ModifierSource = { modifiers: this.metaBonuses.kingdomModifiers, count: 1 };
 
     const passiveSpellSources: ModifierSource[] = this.state.passiveSpells.map((owned) => {
       const def = spellRegistry.get(owned.id);
@@ -428,6 +432,7 @@ export class WaveManager {
       talentSource,
       classSource,
       forgeWeaponSource,
+      kingdomSource,
     ]);
   }
 

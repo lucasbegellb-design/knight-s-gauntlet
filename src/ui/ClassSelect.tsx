@@ -11,9 +11,17 @@ const CLASS_ICON: Record<string, string> = {
   duelist: '🗡️',
 };
 
-function tintToCss(tint: number): string {
-  return `#${tint.toString(16).padStart(6, '0')}`;
-}
+/**
+ * Pure UI accent (card border/glow) — deliberately separate from ClassDefinition.tint, which
+ * now stays neutral (0xffffff) since each class has its own distinct hero sprite; a color wash
+ * over real art would just muddy it. This keeps the class-select screen visually distinct anyway.
+ */
+const CLASS_ACCENT: Record<string, string> = {
+  knight: '#ffffff',
+  berserker: '#e74c3c',
+  guardian: '#3498db',
+  duelist: '#f1c40f',
+};
 
 function StatBar({ label, value, max = 1.6 }: { label: string; value: number; max?: number }) {
   const ratio = Math.max(0.04, Math.min(1, value / max));
@@ -44,7 +52,7 @@ export function ClassSelect() {
 
       <div className="class-select-grid">
         {allClasses.map((classDef) => {
-          const accent = tintToCss(classDef.tint);
+          const accent = CLASS_ACCENT[classDef.id] ?? '#ffffff';
           return (
             <button
               key={classDef.id}
@@ -54,7 +62,7 @@ export function ClassSelect() {
               onClick={() => chooseClass(classDef.id)}
             >
               <div className="class-card-portrait-ring">
-                <GeneratedPortrait category="hero" id="knight" size={72} />
+                <GeneratedPortrait category="hero" id={classDef.id} size={72} />
                 <span className="class-card-icon">{CLASS_ICON[classDef.id] ?? '⚔️'}</span>
               </div>
               <div className="class-card-name">{classDef.name}</div>

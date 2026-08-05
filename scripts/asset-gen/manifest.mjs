@@ -2,7 +2,22 @@
 // per DESIGN_NOTES.md — the rest of the roster can be appended and re-run later
 // without touching generated files (the script skips anything already on disk).
 export const manifest = [
-  { id: 'knight', category: 'hero', prompt: 'a brave young knight in silver plate armor, heroic pose, holding a sword and shield' },
+  { id: 'knight', category: 'hero', prompt: 'a heroic young knight in ornate silver plate armor, sword and shield raised, noble determined expression' },
+  {
+    id: 'berserker',
+    category: 'hero',
+    prompt: 'a fierce battle-scarred barbarian berserker wielding a massive twin-bladed axe, wild hair, rage-filled eyes, tribal armor',
+  },
+  {
+    id: 'guardian',
+    category: 'hero',
+    prompt: 'a stalwart armored guardian knight with a massive tower shield and heavy blue-accented plate armor, unshakeable defensive stance',
+  },
+  {
+    id: 'duelist',
+    category: 'hero',
+    prompt: 'a swift agile duelist swordsman in a sleek gold-trimmed coat, rapier in hand, confident dashing pose',
+  },
   { id: 'goblin_grunt', category: 'monsters', prompt: 'a small snarling green goblin warrior with a crude dagger' },
   { id: 'slime', category: 'monsters', prompt: 'a translucent blue gelatinous slime monster with a simple cute face' },
   { id: 'wolf', category: 'monsters', prompt: 'a fierce grey dire wolf baring its fangs, low crouching stance' },

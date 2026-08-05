@@ -12,16 +12,17 @@ import { equipmentRegistry } from '../data/equipment';
 import { allCompanions, companionRegistry } from '../data/companions';
 import { allMonsters } from '../data/monsters';
 import { spellRegistry } from '../data/spells';
-import { classRegistry, knightClass } from '../data/classes';
+import { allClasses, classRegistry, knightClass } from '../data/classes';
 import { allZones } from '../data/zones';
 import { continentForZone } from '../data/continents';
 import { resolveForgeWeaponModifiers } from '../data/forgeWeapon';
+import { resolveKingdomModifiers } from '../engine/kingdom';
 import { useRunStore } from '../store/runStore';
 import type { EquippedDisplay } from '../store/runStore';
 import { useMetaStore } from '../store/metaStore';
 
 const ASSET_BASE = 'game-assets';
-const HERO_TEXTURE_KEY = 'hero_knight';
+const heroTextureKey = (classId: string) => `hero_${classId}`;
 const monsterTextureKey = (id: string) => `monster_${id}`;
 const companionTextureKey = (id: string) => `companion_${id}`;
 
@@ -116,6 +117,7 @@ export class CombatScene extends Phaser.Scene {
   private lastLootChoiceToken = 0;
   private lastAbandonRunToken = 0;
   private heroTint = 0xffffff;
+  private heroClassId = 'knight';
   /** Set by a critHit event, consumed by the attack event that immediately follows it (CombatEngine always emits them in that order). */
   private pendingCrit = false;
   private heroClassName = 'Knight';
@@ -125,7 +127,9 @@ export class CombatScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.image(HERO_TEXTURE_KEY, `${ASSET_BASE}/hero/knight.png`);
+    for (const classDef of allClasses) {
+      this.load.image(heroTextureKey(classDef.id), `${ASSET_BASE}/hero/${classDef.id}.png`);
+    }
     for (const monster of allMonsters) {
       this.load.image(monsterTextureKey(monster.id), `${ASSET_BASE}/monsters/${monster.id}.png`);
     }
@@ -176,6 +180,11 @@ export class CombatScene extends Phaser.Scene {
       companionUpgrades: meta.companionUpgrades,
       classModifiers,
       forgeWeaponModifiers: resolveForgeWeaponModifiers(meta.forgeWeaponLevel),
+      kingdomModifiers: resolveKingdomModifiers({
+        conqueredTerritoryIds: meta.conqueredTerritoryIds,
+        recruitedLordIds: meta.recruitedLordIds,
+        treasuryLevel: meta.treasuryLevel,
+      }),
     };
   }
 
@@ -184,6 +193,7 @@ export class CombatScene extends Phaser.Scene {
     const classDef = classRegistry.tryGet(meta.selectedClassId ?? '') ?? knightClass;
     this.heroTint = classDef.tint;
     this.heroClassName = classDef.name;
+    this.heroClassId = classDef.id;
 
     const scaledHero = scaleHeroDefinition(knight, classDef.statMultiplier);
     const startingEquipment: Partial<EquippedItems> = meta.startingWeapon
@@ -206,7 +216,17 @@ export class CombatScene extends Phaser.Scene {
     this.allyViews.forEach((view) => this.destroyUnitView(view));
     this.allyViews = [];
 
-    this.heroView = this.createUnitView(HERO_X, HERO_Y, HERO_SIZE.width, HERO_SIZE.height, HERO_COLOR, HERO_TEXTURE_KEY, undefined, undefined, this.heroTint);
+    this.heroView = this.createUnitView(
+      HERO_X,
+      HERO_Y,
+      HERO_SIZE.width,
+      HERO_SIZE.height,
+      HERO_COLOR,
+      heroTextureKey(this.heroClassId),
+      undefined,
+      undefined,
+      this.heroTint,
+    );
     this.updateUnitView(this.heroView, state.hero.name, state.hero.hp, state.hero.maxHp);
     this.rebuildMonsterView();
     this.rebuildAllyViews();

@@ -10,5 +10,6 @@ export const duelistClass: ClassDefinition = {
     { kind: 'critDamageMultiplier', value: 0.1 },
   ],
   weaponPool: ['frostbrand', 'stormblade'],
-  tint: 0xf1c40f,
+  /** Neutral — a distinct hero sprite per class carries visual identity now, not a color wash; kept as the graceful-fallback tint if this class's art is ever missing. */
+  tint: 0xffffff,
 };

@@ -22,6 +22,7 @@ function makeMetaBonuses(overrides: Partial<MetaBonuses> = {}): MetaBonuses {
     companionUpgrades: {},
     classModifiers: [],
     forgeWeaponModifiers: [],
+    kingdomModifiers: [],
     ...overrides,
   };
 }
@@ -432,6 +433,23 @@ describe('WaveManager', () => {
       growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
     };
     const manager = new WaveManager(weakHero, 1, makeMetaBonuses({ forgeWeaponModifiers: [{ kind: 'flatDamageBonus', value: 10 }] }));
+
+    const events = manager.tick(500);
+
+    const attackEvent = events.find((e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'hero');
+    expect(attackEvent && attackEvent.type === 'combat' && attackEvent.event.type === 'attack' ? attackEvent.event.damage : null).toBe(
+      11,
+    );
+  });
+
+  it('applies kingdom modifiers (territories/lords/treasury) to the heros combat damage', () => {
+    const weakHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 1000, attack: 1, attackIntervalMs: 500 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(weakHero, 1, makeMetaBonuses({ kingdomModifiers: [{ kind: 'flatDamageBonus', value: 10 }] }));
 
     const events = manager.tick(500);
 
