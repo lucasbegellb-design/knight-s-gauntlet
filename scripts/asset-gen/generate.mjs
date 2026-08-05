@@ -3,7 +3,7 @@
 // key "0000000000") with fallback to Pollinations.ai (fast, synchronous, no
 // polling). Resumable: skips any id already on disk. Never blocks the game —
 // missing files just mean the UI keeps using its placeholder rendering.
-import { writeFile, mkdir, access, readFile } from 'node:fs/promises';
+import { writeFile, mkdir, access } from 'node:fs/promises';
 import path from 'node:path';
 import { fullManifest } from './manifest.mjs';
 
@@ -20,15 +20,24 @@ const PIXEL_ART_STYLE =
 const LANDSCAPE_STYLE =
   ', Brave Frontier style painted fantasy environment art, world map location banner, saturated dramatic lighting, detailed matte painting, no characters in foreground, high quality game art';
 const STYLE_BY_NAME = { illustration: ILLUSTRATION_STYLE, pixelArt: PIXEL_ART_STYLE, landscape: LANDSCAPE_STYLE };
-/** Appended to an attack-frame entry's prompt, before its style suffix — the img2img source (see generateAsset) is what actually anchors the character; this just steers the pose. */
-const ATTACK_POSE_FRAGMENT = ', dynamic mid-attack action pose, weapon or fists thrust forward, motion lines, same character';
+/**
+ * Appended to an attack-frame entry's prompt, before its style suffix. img2img (source_image +
+ * source_processing, anchoring the attack frame to its idle portrait) was tried first as the fix
+ * for frame-to-frame character consistency, and rejected after empirical testing: at
+ * denoising_strength 0.55/0.8/0.95 the anonymous AI Horde tier consistently returned a
+ * near-pixel-identical copy of the source pose regardless of the value sent — the anonymous/free
+ * queue doesn't appear to honor it. Plain txt2img (used here) at least reliably delivers a real,
+ * visibly different pose, which is the actual point of a second frame; character consistency
+ * across the two frames is "close, not exact" — the same tradeoff already shipped and accepted
+ * for companions' two independently-generated illustration/pixelArt art styles.
+ */
+const ATTACK_POSE_FRAGMENT = ', dynamic mid-attack action pose, weapon or fists thrust forward, motion lines, same character design';
 const OUTPUT_ROOT = path.resolve(process.cwd(), 'public/game-assets');
 const FAILURE_LOG = path.resolve(process.cwd(), 'scripts/asset-gen/failures.json');
 const HORDE_BASE = 'https://aihorde.net/api/v2';
 const HORDE_API_KEY = '0000000000';
 const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt';
 const POLLINATIONS_DELAY_MS = 25000;
-const IMG2IMG_DENOISING_STRENGTH = 0.55;
 
 function buildPrompt(entry) {
   const suffix = (entry.style && STYLE_BY_NAME[entry.style]) || CHIBI_STYLE;
@@ -39,11 +48,6 @@ function buildPrompt(entry) {
 function outputPath(entry) {
   const frameSuffix = entry.frame === 'attack' ? '_attack' : '';
   return path.join(OUTPUT_ROOT, entry.category, `${entry.id}${frameSuffix}.png`);
-}
-
-/** The idle PNG an attack-frame entry is generated *from* via img2img — its own sibling in the same category. */
-function idleSourcePath(entry) {
-  return path.join(OUTPUT_ROOT, entry.category, `${entry.id}.png`);
 }
 
 async function fileExists(p) {
@@ -70,16 +74,9 @@ async function generateViaPollinations(prompt, { retries = 3, backoffMs = 20000 
   throw new Error('Pollinations retries exhausted');
 }
 
-async function generateViaAiHorde(prompt, { pollIntervalMs = 4000, timeoutMs = 90000, sourceImageBuffer = null } = {}) {
+async function generateViaAiHorde(prompt, { pollIntervalMs = 4000, timeoutMs = 90000 } = {}) {
   const params = { width: 512, height: 512, steps: 20, sampler_name: 'k_euler', cfg_scale: 7 };
   const body = { prompt, params, models: ['stable_diffusion'], nsfw: false };
-  if (sourceImageBuffer) {
-    // img2img, anchored to an existing idle portrait — keeps the attack-frame pose changes on the
-    // same character/colors instead of an independent txt2img roll drifting visually.
-    params.denoising_strength = IMG2IMG_DENOISING_STRENGTH;
-    body.source_image = sourceImageBuffer.toString('base64');
-    body.source_processing = 'img2img';
-  }
   const submitRes = await fetch(`${HORDE_BASE}/generate/async`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: HORDE_API_KEY, 'Client-Agent': 'knights-gauntlet:1.0:asset-gen' },
@@ -114,22 +111,12 @@ async function generateAsset(entry, { skipHorde = false } = {}) {
     return { entry, status: 'skipped' };
   }
 
-  let sourceImageBuffer = null;
-  if (entry.frame === 'attack') {
-    const src = idleSourcePath(entry);
-    if (!(await fileExists(src))) {
-      console.warn(`skip (no idle frame yet, prerequisite for img2img): ${label}`);
-      return { entry, status: 'skipped-missing-idle' };
-    }
-    sourceImageBuffer = await readFile(src);
-  }
-
   const prompt = buildPrompt(entry);
   await mkdir(path.dirname(dest), { recursive: true });
 
   if (!skipHorde) {
     try {
-      const buffer = await generateViaAiHorde(prompt, { sourceImageBuffer });
+      const buffer = await generateViaAiHorde(prompt);
       await writeFile(dest, buffer);
       console.log(`generated via AI Horde: ${label}`);
       return { entry, status: 'ok', provider: 'ai-horde' };
@@ -138,9 +125,6 @@ async function generateAsset(entry, { skipHorde = false } = {}) {
     }
   }
 
-  // Pollinations has no img2img support in its free anonymous API — an attack-frame fallback here
-  // is plain txt2img (no character-consistency guarantee), a deliberately accepted degradation
-  // rather than blocking the whole pipeline on AI Horde being the only path.
   try {
     const buffer = await generateViaPollinations(prompt);
     await writeFile(dest, buffer);
