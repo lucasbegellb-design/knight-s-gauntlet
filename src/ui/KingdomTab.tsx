@@ -2,6 +2,7 @@ import { useMetaStore } from '../store/metaStore';
 import { allLords, allTerritories } from '../data/kingdom';
 import { MAX_TREASURY_LEVEL, treasuryUpgradeCost } from '../engine/kingdom';
 import type { RelicModifier } from '../data/relic.types';
+import { GeneratedPortrait } from './RarityIcon';
 
 const MODIFIER_LABEL: Record<string, string> = {
   damageMultiplier: 'damage',
@@ -61,6 +62,7 @@ export function KingdomTab() {
           const owned = conqueredTerritoryIds.includes(territory.id);
           return (
             <div key={territory.id} className="hub-row-item">
+              <GeneratedPortrait category="territories" id={territory.id} size={56} />
               <div>
                 <div className="hub-item-name">{territory.name}</div>
                 <div className="hub-item-description">
@@ -87,6 +89,7 @@ export function KingdomTab() {
           const owned = recruitedLordIds.includes(lord.id);
           return (
             <div key={lord.id} className="hub-row-item">
+              <GeneratedPortrait category="lords" id={lord.id} size={56} />
               <div>
                 <div className="hub-item-name">
                   {lord.name} <span className="hub-item-rank">{lord.title}</span>

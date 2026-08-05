@@ -23,8 +23,12 @@ import { useMetaStore } from '../store/metaStore';
 
 const ASSET_BASE = 'game-assets';
 const heroTextureKey = (classId: string) => `hero_${classId}`;
+const heroAttackTextureKey = (classId: string) => `hero_${classId}_attack`;
 const monsterTextureKey = (id: string) => `monster_${id}`;
+const monsterAttackTextureKey = (id: string) => `monster_${id}_attack`;
 const companionTextureKey = (id: string) => `companion_${id}`;
+const companionAttackTextureKey = (id: string) => `companion_${id}_attack`;
+const zoneTextureKey = (id: string) => `zone_${id}`;
 
 const HERO_COLOR = 0x3b82c4;
 const HERO_SIZE = { width: 130, height: 150 };
@@ -50,6 +54,9 @@ const MONSTER_SPRITE_SCALE: Record<string, number> = {
 
 const ZONE_BACKGROUND: Record<string, number> = Object.fromEntries(allZones.map((zone) => [zone.id, zone.backgroundColor]));
 const DEFAULT_BACKGROUND = 0x1d1d1d;
+const GAME_WIDTH = 800;
+const GAME_HEIGHT = 450;
+const ZONE_SCRIM_ALPHA = 0.35;
 
 const ATTACK_LUNGE_DISTANCE = 34;
 const ATTACK_LUNGE_OUT_MS = 130;
@@ -107,6 +114,12 @@ interface UnitView {
   /** Home position the attack lunge tween returns to; the hp bar/label stay pinned here regardless of the body's lunge offset. */
   baseX: number;
   baseY: number;
+  /** Texture keys for the idle/attack frames (attack may be undefined/not-yet-generated) — attackLunge swaps between them. */
+  idleTextureKey?: string;
+  attackTextureKey?: string;
+  /** The unit's bounding box, reapplied via applyContainFit whenever the body's texture is swapped. */
+  boxWidth: number;
+  boxHeight: number;
 }
 
 export class CombatScene extends Phaser.Scene {
@@ -114,6 +127,8 @@ export class CombatScene extends Phaser.Scene {
   private heroView!: UnitView;
   private monsterView!: UnitView;
   private allyViews: UnitView[] = [];
+  private zoneBackdrop: Phaser.GameObjects.Image | null = null;
+  private zoneScrim: Phaser.GameObjects.Rectangle | null = null;
   private lastLootChoiceToken = 0;
   private lastAbandonRunToken = 0;
   private heroTint = 0xffffff;
@@ -129,12 +144,18 @@ export class CombatScene extends Phaser.Scene {
   preload(): void {
     for (const classDef of allClasses) {
       this.load.image(heroTextureKey(classDef.id), `${ASSET_BASE}/hero/${classDef.id}.png`);
+      this.load.image(heroAttackTextureKey(classDef.id), `${ASSET_BASE}/hero/${classDef.id}_attack.png`);
     }
     for (const monster of allMonsters) {
       this.load.image(monsterTextureKey(monster.id), `${ASSET_BASE}/monsters/${monster.id}.png`);
+      this.load.image(monsterAttackTextureKey(monster.id), `${ASSET_BASE}/monsters/${monster.id}_attack.png`);
     }
     for (const companion of allCompanions) {
       this.load.image(companionTextureKey(companion.id), `${ASSET_BASE}/companions/${companion.id}.png`);
+      this.load.image(companionAttackTextureKey(companion.id), `${ASSET_BASE}/companions/${companion.id}_attack.png`);
+    }
+    for (const zone of allZones) {
+      this.load.image(zoneTextureKey(zone.id), `${ASSET_BASE}/zones/${zone.id}.png`);
     }
   }
 
@@ -226,6 +247,7 @@ export class CombatScene extends Phaser.Scene {
       undefined,
       undefined,
       this.heroTint,
+      heroAttackTextureKey(this.heroClassId),
     );
     this.updateUnitView(this.heroView, state.hero.name, state.hero.hp, state.hero.maxHp);
     this.rebuildMonsterView();
@@ -236,7 +258,26 @@ export class CombatScene extends Phaser.Scene {
 
   private applyZoneBackground(): void {
     const zoneId = this.waveManager.getRunState().zoneId;
+    // Solid color always applied first — the permanent fallback if that zone's backdrop art is missing.
     this.cameras.main.setBackgroundColor(ZONE_BACKGROUND[zoneId] ?? DEFAULT_BACKGROUND);
+
+    const textureKey = zoneTextureKey(zoneId);
+    if (!this.textures.exists(textureKey)) {
+      this.zoneBackdrop?.setVisible(false);
+      this.zoneScrim?.setVisible(false);
+      return;
+    }
+
+    if (!this.zoneBackdrop) {
+      this.zoneBackdrop = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, textureKey).setDepth(-1000);
+      this.zoneBackdrop.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
+      this.zoneScrim = this.add
+        .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, ZONE_SCRIM_ALPHA)
+        .setDepth(-999);
+    } else {
+      this.zoneBackdrop.setTexture(textureKey).setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setVisible(true);
+      this.zoneScrim?.setVisible(true);
+    }
   }
 
   private rebuildMonsterView(): void {
@@ -252,6 +293,10 @@ export class CombatScene extends Phaser.Scene {
       Math.round(appearance.height * scale),
       appearance.color,
       monsterTextureKey(state.monster.id),
+      undefined,
+      undefined,
+      undefined,
+      monsterAttackTextureKey(state.monster.id),
     );
     if ('setFlipX' in this.monsterView.body) this.monsterView.body.setFlipX(true);
     this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
@@ -274,6 +319,8 @@ export class CombatScene extends Phaser.Scene {
         companionTextureKey(ally.combatant.id),
         COMPANION_BAR_WIDTH,
         COMPANION_BAR_HEIGHT,
+        undefined,
+        companionAttackTextureKey(ally.combatant.id),
       );
       this.updateUnitView(view, ally.combatant.name, ally.combatant.hp, ally.combatant.maxHp, COMPANION_BAR_WIDTH);
       this.allyViews.push(view);
@@ -498,6 +545,15 @@ export class CombatScene extends Phaser.Scene {
     });
   }
 
+  /** Contain-fit an Image within a bounding box instead of stretching — reused both at unit-view creation and whenever attackLunge swaps in a different-dimensioned attack-frame texture. */
+  private applyContainFit(body: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle, width: number, height: number): void {
+    if (!('setDisplaySize' in body)) return;
+    const srcW = body.width || width;
+    const srcH = body.height || height;
+    const fitScale = Math.min(width / srcW, height / srcH);
+    body.setDisplaySize(srcW * fitScale, srcH * fitScale);
+  }
+
   private createUnitView(
     bodyX: number,
     bodyY: number,
@@ -508,6 +564,7 @@ export class CombatScene extends Phaser.Scene {
     barWidth: number = HP_BAR_WIDTH,
     barHeight: number = HP_BAR_HEIGHT,
     tint?: number,
+    attackTextureKey?: string,
   ): UnitView {
     const barY = bodyY - height / 2 - 20;
     const shadow = this.add.ellipse(bodyX, bodyY + height / 2 - 6, width * 0.6, height * 0.16, 0x000000, 0.35);
@@ -515,13 +572,7 @@ export class CombatScene extends Phaser.Scene {
       textureKey && this.textures.exists(textureKey)
         ? this.add.image(bodyX, bodyY, textureKey)
         : this.add.rectangle(bodyX, bodyY, width, height, color);
-    if ('setDisplaySize' in body) {
-      // Contain-fit within the tier's bounding box instead of stretching — sprites keep their real proportions.
-      const srcW = body.width || width;
-      const srcH = body.height || height;
-      const fitScale = Math.min(width / srcW, height / srcH);
-      body.setDisplaySize(srcW * fitScale, srcH * fitScale);
-    }
+    this.applyContainFit(body, width, height);
     if (tint !== undefined && tint !== 0xffffff && 'setTint' in body) body.setTint(tint);
 
     const atbY = barY + barHeight + 3;
@@ -558,6 +609,10 @@ export class CombatScene extends Phaser.Scene {
       restTint: tint ?? 0xffffff,
       baseX: bodyX,
       baseY: bodyY,
+      idleTextureKey: textureKey,
+      attackTextureKey,
+      boxWidth: width,
+      boxHeight: height,
     };
     view.idleTween = this.tweens.add({
       targets: body,
@@ -600,15 +655,31 @@ export class CombatScene extends Phaser.Scene {
    */
   private attackLunge(view: UnitView, towardX: number): void {
     const direction = Math.sign(towardX - view.baseX) || 1;
+    this.swapUnitFrame(view, view.attackTextureKey);
     this.tweens.add({
       targets: view.body,
       x: view.baseX + direction * ATTACK_LUNGE_DISTANCE,
       duration: ATTACK_LUNGE_OUT_MS,
       ease: 'Back.Out',
       onComplete: () => {
-        this.tweens.add({ targets: view.body, x: view.baseX, duration: ATTACK_LUNGE_BACK_MS, ease: 'Quad.In' });
+        this.tweens.add({
+          targets: view.body,
+          x: view.baseX,
+          duration: ATTACK_LUNGE_BACK_MS,
+          ease: 'Quad.In',
+          onComplete: () => this.swapUnitFrame(view, view.idleTextureKey),
+        });
       },
     });
+  }
+
+  /** Swaps a unit's body to a different generated texture (idle <-> attack frame), if it's loaded — a no-op for units with no attack frame yet, or for the rectangle placeholder body. */
+  private swapUnitFrame(view: UnitView, textureKey: string | undefined): void {
+    if (!textureKey || !this.textures.exists(textureKey)) return;
+    if (!(view.body instanceof Phaser.GameObjects.Image)) return;
+    if (view.body.texture.key === textureKey) return;
+    view.body.setTexture(textureKey);
+    this.applyContainFit(view.body, view.boxWidth, view.boxHeight);
   }
 
   /** The actual "hit" beat: flinch, white flash, spark burst, screen shake, and the damage number — all timed to land together. */
