@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { BOSS_WAVE_INTERVAL, MINIBOSS_WAVE_INTERVAL, monsterPoolForWave, scaledMonsterStats, tierForWave, zoneForWave } from './waveScaling';
+import {
+  BOSS_WAVE_INTERVAL,
+  MEGABOSS_WAVE_INTERVAL,
+  MINIBOSS_WAVE_INTERVAL,
+  ULTRABOSS_WAVE_INTERVAL,
+  monsterPoolForWave,
+  scaledMonsterStats,
+  tierForWave,
+  zoneForWave,
+} from './waveScaling';
 import type { MonsterDefinition } from '../data/monster.types';
 import { allZones } from '../data/zones';
 
@@ -16,6 +25,17 @@ describe('tierForWave', () => {
   it('returns boss on boss-interval waves, taking priority over the miniboss interval', () => {
     expect(BOSS_WAVE_INTERVAL % MINIBOSS_WAVE_INTERVAL).toBe(0);
     expect(tierForWave(BOSS_WAVE_INTERVAL)).toBe('boss');
+  });
+
+  it('returns megaboss on megaboss-interval waves, taking priority over boss/miniboss', () => {
+    expect(MEGABOSS_WAVE_INTERVAL % BOSS_WAVE_INTERVAL).toBe(0);
+    expect(tierForWave(MEGABOSS_WAVE_INTERVAL)).toBe('megaboss');
+    expect(tierForWave(MEGABOSS_WAVE_INTERVAL * 3)).toBe('megaboss');
+  });
+
+  it('returns ultraboss on ultraboss-interval waves, taking priority over megaboss', () => {
+    expect(ULTRABOSS_WAVE_INTERVAL % MEGABOSS_WAVE_INTERVAL).toBe(0);
+    expect(tierForWave(ULTRABOSS_WAVE_INTERVAL)).toBe('ultraboss');
   });
 });
 
@@ -41,6 +61,30 @@ describe('scaledMonsterStats', () => {
     const late = scaledMonsterStats(def, 20);
     expect(late.maxHp).toBeGreaterThan(early.maxHp);
     expect(late.attack).toBeGreaterThan(early.attack);
+  });
+
+  it('the era-escalation multiplier is a complete no-op below wave 100 (early-game curve unchanged)', () => {
+    // Pure linear formula, hand-computed: hpMultiplier = 1 + wave*0.1, attackMultiplier = 1 + wave*0.06.
+    const wave99 = scaledMonsterStats(def, 99);
+    expect(wave99.maxHp).toBe(Math.round(def.maxHp * (1 + 99 * 0.1)));
+    expect(wave99.attack).toBe(Math.round(def.attack * (1 + 99 * 0.06)));
+  });
+
+  it('compounds an extra escalation multiplier per 100-wave era past wave 100', () => {
+    const wave100 = scaledMonsterStats(def, 100);
+    const wave99 = scaledMonsterStats(def, 99);
+    // Both eras' linear component is nearly identical (wave 99 vs 100); the visible jump at the
+    // era boundary is the escalation multiplier kicking in, not the linear term alone.
+    const linearOnlyAt100 = def.maxHp * (1 + 100 * 0.1);
+    expect(wave100.maxHp).toBeGreaterThan(Math.round(linearOnlyAt100));
+    expect(wave100.maxHp).toBeGreaterThan(wave99.maxHp);
+  });
+
+  it('escalates far enough by a very late wave that no fixed hero build could keep pace forever', () => {
+    const wave100 = scaledMonsterStats(def, 100);
+    const wave1000 = scaledMonsterStats(def, 1000);
+    // era 1 -> era 10: compounding, not linear, growth — a large multiple, not just 10x the wave-100 numbers.
+    expect(wave1000.maxHp).toBeGreaterThan(wave100.maxHp * 10);
   });
 });
 

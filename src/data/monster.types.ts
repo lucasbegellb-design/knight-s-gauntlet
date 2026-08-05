@@ -1,4 +1,4 @@
-export type MonsterTier = 'normal' | 'miniboss' | 'boss';
+export type MonsterTier = 'normal' | 'miniboss' | 'boss' | 'megaboss' | 'ultraboss';
 
 export interface MonsterDefinition {
   id: string;

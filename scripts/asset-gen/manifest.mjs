@@ -19,6 +19,22 @@ export const manifest = [
   { id: 'venomous_broodmother', category: 'monsters', prompt: 'a monstrous venomous spider broodmother, miniboss, many eyes' },
   { id: 'frost_lich', category: 'monsters', prompt: 'an undead frost lich in icy tattered robes, glowing blue eyes, boss monster' },
   { id: 'inferno_golem', category: 'monsters', prompt: 'a massive molten stone golem wreathed in fire, boss monster, imposing' },
+  {
+    id: 'colossus_of_ash',
+    category: 'monsters',
+    prompt: 'a colossal ash-grey stone titan wreathed in smoldering cinders, cracked glowing molten veins, megaboss, towering and imposing',
+  },
+  {
+    id: 'gravemind_hydra',
+    category: 'monsters',
+    prompt: 'a monstrous three-headed hydra made of bone and shadow, glowing violet eyes, megaboss, terrifying',
+  },
+  {
+    id: 'the_unmaking',
+    category: 'monsters',
+    prompt:
+      'an apocalyptic void entity of shattered cosmic armor and swirling dark energy, ultraboss, final boss, overwhelming presence, radiant black and gold',
+  },
   { id: 'rarity_common', category: 'icons', prompt: 'a simple grey gemstone icon, plain and dull' },
   { id: 'rarity_rare', category: 'icons', prompt: 'a glowing blue sapphire gemstone icon' },
   { id: 'rarity_epic', category: 'icons', prompt: 'a glowing purple amethyst gemstone icon' },
@@ -118,5 +134,41 @@ export const manifest = [
     category: 'companions',
     style: 'pixelArt',
     prompt: 'a mythic celestial seraph with glowing golden wings and radiant halo, ethereal divine aura',
+  },
+  {
+    id: 'iron_vanguard',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a veteran armored vanguard knight with a massive tower shield and battle-worn plate, unshakeable defensive stance',
+  },
+  {
+    id: 'iron_vanguard',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'a veteran armored vanguard knight with a massive tower shield and battle-worn plate, unshakeable defensive stance',
+  },
+  {
+    id: 'hearthkeeper',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a hardened field medic in warm earthen robes holding a glowing mending staff, calm and resolute',
+  },
+  {
+    id: 'hearthkeeper',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'a hardened field medic in warm earthen robes holding a glowing mending staff, calm and resolute',
+  },
+  {
+    id: 'warlords_aegis',
+    category: 'companions_illustration',
+    style: 'illustration',
+    prompt: 'a battle-worn banner-bearer holding a great standard and a rune-etched aegis shield, commanding heroic stance',
+  },
+  {
+    id: 'warlords_aegis',
+    category: 'companions',
+    style: 'pixelArt',
+    prompt: 'a battle-worn banner-bearer holding a great standard and a rune-etched aegis shield, commanding heroic stance',
   },
 ];

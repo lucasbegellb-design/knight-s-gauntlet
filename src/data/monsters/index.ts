@@ -8,14 +8,17 @@ import { bat } from './bat';
 import { orcChieftain } from './orcChieftain';
 import { ancientWyrm } from './ancientWyrm';
 import { monsterPack2 } from './pack2';
+import { milestoneBosses } from './milestoneBosses';
 
 export const monsterRegistry = new Registry<MonsterDefinition>();
 
-monsterRegistry.registerAll([goblinGrunt, slime, wolf, skeleton, bat, orcChieftain, ancientWyrm, ...monsterPack2]);
+monsterRegistry.registerAll([goblinGrunt, slime, wolf, skeleton, bat, orcChieftain, ancientWyrm, ...monsterPack2, ...milestoneBosses]);
 
 export const allMonsters = monsterRegistry.all();
 export const normalMonsters = allMonsters.filter((m) => m.tier === 'normal');
 export const miniBosses = allMonsters.filter((m) => m.tier === 'miniboss');
 export const bosses = allMonsters.filter((m) => m.tier === 'boss');
+export const megaBosses = allMonsters.filter((m) => m.tier === 'megaboss');
+export const ultraBosses = allMonsters.filter((m) => m.tier === 'ultraboss');
 
 export { goblinGrunt, slime, wolf, skeleton, bat, orcChieftain, ancientWyrm };

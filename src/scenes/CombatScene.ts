@@ -32,6 +32,8 @@ const MONSTER_APPEARANCE: Record<MonsterTier, { color: number; width: number; he
   normal: { color: 0xc0392b, width: 120, height: 130 },
   miniboss: { color: 0xe67e22, width: 150, height: 160 },
   boss: { color: 0x8e2de2, width: 175, height: 190 },
+  megaboss: { color: 0x7a0c0c, width: 210, height: 220 },
+  ultraboss: { color: 0xf1c40f, width: 240, height: 250 },
 };
 
 /** Per-monster scale tweak layered on top of the tier's base size, so a few standouts read as bigger/smaller than their tier peers. */
@@ -112,6 +114,7 @@ export class CombatScene extends Phaser.Scene {
   private monsterView!: UnitView;
   private allyViews: UnitView[] = [];
   private lastLootChoiceToken = 0;
+  private lastAbandonRunToken = 0;
   private heroTint = 0xffffff;
   /** Set by a critHit event, consumed by the attack event that immediately follows it (CombatEngine always emits them in that order). */
   private pendingCrit = false;
@@ -133,11 +136,21 @@ export class CombatScene extends Phaser.Scene {
 
   create(): void {
     this.lastLootChoiceToken = useRunStore.getState().lootChoiceRequest?.token ?? 0;
+    this.lastAbandonRunToken = useRunStore.getState().abandonRunRequest?.token ?? 0;
     this.startNewRun();
   }
 
   update(_time: number, delta: number): void {
     const store = useRunStore.getState();
+
+    if (store.abandonRunRequest && store.abandonRunRequest.token !== this.lastAbandonRunToken) {
+      this.lastAbandonRunToken = store.abandonRunRequest.token;
+      const events = this.waveManager.abandonRun();
+      this.handleEvents(events);
+      this.syncUnitViews();
+      this.pushSnapshotToStore();
+      return;
+    }
 
     if (store.lootChoiceRequest && store.lootChoiceRequest.token !== this.lastLootChoiceToken) {
       this.lastLootChoiceToken = store.lootChoiceRequest.token;
@@ -452,6 +465,7 @@ export class CombatScene extends Phaser.Scene {
       heroHp: combat.hero.hp,
       heroMaxHp: combat.hero.maxHp,
       isGameOver: run.isGameOver,
+      endReason: run.endReason,
       gold: run.gold,
       brokenParts: run.brokenParts,
       ownedRelics,

@@ -171,6 +171,17 @@ describe('WaveManager', () => {
     expect(manager.getRunState().monsterTier).toBe('boss');
   });
 
+  it('spawns a megaboss at wave 100 and an ultraboss at wave 1000, directly jumping ahead rather than ticking through every wave', () => {
+    const manager = new WaveManager(testHero, 4);
+    const casted = manager as unknown as { buildWaveEngine: (wave: number) => CombatEngine; engine: CombatEngine };
+
+    casted.engine = casted.buildWaveEngine(100);
+    expect(manager.getRunState().monsterTier).toBe('megaboss');
+
+    casted.engine = casted.buildWaveEngine(1000);
+    expect(manager.getRunState().monsterTier).toBe('ultraboss');
+  });
+
   it('ends the run and stops ticking once the hero dies (without Phoenix Heart)', () => {
     const weakHero: HeroDefinition = {
       id: 'hero',
@@ -189,6 +200,35 @@ describe('WaveManager', () => {
     const laterEvents = manager.tick(10_000);
     expect(laterEvents).toEqual([]);
     expect(manager.getRunState()).toEqual(snapshot);
+  });
+
+  it('lets the player voluntarily abandon a run, ending it with endReason "abandoned" and banking currency the same way', () => {
+    const manager = new WaveManager(testHero, 1);
+    manager.tick(200);
+    expect(manager.getRunState().isGameOver).toBe(false);
+
+    const events = manager.abandonRun();
+
+    expect(events.some((e) => e.type === 'runOver')).toBe(true);
+    expect(manager.getRunState().isGameOver).toBe(true);
+    expect(manager.getRunState().endReason).toBe('abandoned');
+
+    // A second call (or any further tick) is a no-op, matching the death-ends-run behavior.
+    expect(manager.abandonRun()).toEqual([]);
+    expect(manager.tick(1000)).toEqual([]);
+  });
+
+  it('defaults endReason to "death" when the run ends from a lethal hit, not abandonment', () => {
+    const weakHero: HeroDefinition = {
+      id: 'hero',
+      name: 'Hero',
+      base: { maxHp: 1, attack: 0, attackIntervalMs: 100_000 },
+      growth: { maxHpPerLevel: 0, attackPerLevel: 0 },
+    };
+    const manager = new WaveManager(weakHero, 1);
+    manager.tick(5000);
+    expect(manager.getRunState().isGameOver).toBe(true);
+    expect(manager.getRunState().endReason).toBe('death');
   });
 
   it('revives once via Phoenix Heart instead of ending the run, then dies normally on the second lethal hit', () => {
