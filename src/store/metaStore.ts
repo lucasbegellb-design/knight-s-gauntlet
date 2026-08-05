@@ -7,7 +7,7 @@ import { Rng } from '../engine/rng';
 import type { Rarity } from '../data/rarity';
 import { forgeWeaponUpgradeCost, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWeapon';
 import { allCompanions, STARTER_COMPANION_IDS } from '../data/companions';
-import { pullGacha, pullGachaMulti, type GachaPullResult } from '../engine/gacha';
+import { pullGacha, pullGachaMulti, nextPityState, DEFAULT_PITY_STATE, type GachaPullResult, type GachaPityState } from '../engine/gacha';
 import { pendingIdleEssence } from '../engine/idleEssence';
 import { territoryRegistry, lordRegistry } from '../data/kingdom';
 import { MAX_TREASURY_LEVEL, treasuryUpgradeCost } from '../engine/kingdom';
@@ -49,6 +49,8 @@ interface PersistedMeta {
   forgeWeaponLevel: number;
   /** Companions unlocked via the Gacha (src/ui/Gacha.tsx) — only these can appear in an in-run loot pool. */
   unlockedCompanionIds: string[];
+  /** Pity streak counters carried across every pull (single and x10 alike) — see engine/gacha.ts. */
+  gachaPity: GachaPityState;
   /** Kingdom territories conquered / lords recruited (see src/data/kingdom, src/engine/kingdom.ts) — a post-max-level essence sink. */
   conqueredTerritoryIds: string[];
   recruitedLordIds: string[];
@@ -80,6 +82,7 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   brokenParts: 0,
   forgeWeaponLevel: 0,
   unlockedCompanionIds: [...STARTER_COMPANION_IDS],
+  gachaPity: { ...DEFAULT_PITY_STATE },
   conqueredTerritoryIds: [],
   recruitedLordIds: [],
   treasuryLevel: 0,
@@ -153,6 +156,7 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     brokenParts: state.brokenParts,
     forgeWeaponLevel: state.forgeWeaponLevel,
     unlockedCompanionIds: state.unlockedCompanionIds,
+    gachaPity: state.gachaPity,
     conqueredTerritoryIds: state.conqueredTerritoryIds,
     recruitedLordIds: state.recruitedLordIds,
     treasuryLevel: state.treasuryLevel,
@@ -280,15 +284,17 @@ export const useMetaStore = create<MetaStore>((set) => ({
     set((state) => {
       if (state.currency < GACHA_SINGLE_PULL_COST) return state;
       const owned = new Set(state.unlockedCompanionIds);
-      const result = pullGacha(new Rng(Date.now()), allCompanions, owned);
-      return applyGachaResults(state, [result], GACHA_SINGLE_PULL_COST);
+      const result = pullGacha(new Rng(Date.now()), allCompanions, owned, state.gachaPity);
+      const pity = nextPityState(state.gachaPity, result.companion.rarity);
+      return applyGachaResults(state, [result], GACHA_SINGLE_PULL_COST, pity);
     }),
   pullGachaMulti: () =>
     set((state) => {
       if (state.currency < GACHA_MULTI_PULL_COST) return state;
       const owned = new Set(state.unlockedCompanionIds);
-      const results = pullGachaMulti(new Rng(Date.now()), allCompanions, owned, GACHA_MULTI_PULL_COUNT);
-      return applyGachaResults(state, results, GACHA_MULTI_PULL_COST);
+      const results = pullGachaMulti(new Rng(Date.now()), allCompanions, owned, GACHA_MULTI_PULL_COUNT, state.gachaPity);
+      const pity = results.reduce((acc, r) => nextPityState(acc, r.companion.rarity), state.gachaPity);
+      return applyGachaResults(state, results, GACHA_MULTI_PULL_COST, pity);
     }),
   clearGachaResults: () => set({ lastGachaResults: null }),
   collectIdleEssence: () =>
@@ -300,8 +306,8 @@ export const useMetaStore = create<MetaStore>((set) => ({
     }),
 }));
 
-/** Shared by pullGachaSingle/pullGachaMulti: deducts the pull cost, unlocks any new companions, refunds essence + grants Ascension Shards for duplicates, and stashes the results for the reveal overlay. */
-function applyGachaResults(state: MetaStore, results: GachaPullResult[], totalCost: number): Partial<MetaStore> {
+/** Shared by pullGachaSingle/pullGachaMulti: deducts the pull cost, unlocks any new companions, refunds essence + grants Ascension Shards for duplicates, advances the pity streak, and stashes the results for the reveal overlay. */
+function applyGachaResults(state: MetaStore, results: GachaPullResult[], totalCost: number, pity: GachaPityState): Partial<MetaStore> {
   const unlocked = new Set(state.unlockedCompanionIds);
   const discoveredCompanionIds = new Set(state.discoveredCompanionIds);
   const companionShards = { ...state.companionShards };
@@ -323,6 +329,7 @@ function applyGachaResults(state: MetaStore, results: GachaPullResult[], totalCo
     unlockedCompanionIds: [...unlocked],
     discoveredCompanionIds: [...discoveredCompanionIds],
     companionShards,
+    gachaPity: pity,
     lastGachaResults: results,
   };
 }
