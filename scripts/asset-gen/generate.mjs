@@ -22,8 +22,6 @@ const FAILURE_LOG = path.resolve(process.cwd(), 'scripts/asset-gen/failures.json
 const HORDE_BASE = 'https://aihorde.net/api/v2';
 const HORDE_API_KEY = '0000000000';
 const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt';
-/** `flux` is Pollinations' higher-quality model (better prompt adherence/detail than the default fast model). */
-const POLLINATIONS_MODEL = 'flux';
 const POLLINATIONS_DELAY_MS = 25000;
 
 function buildPrompt(entry) {
@@ -45,7 +43,7 @@ async function fileExists(p) {
 }
 
 async function generateViaPollinations(prompt, { retries = 3, backoffMs = 20000 } = {}) {
-  const url = `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&model=${POLLINATIONS_MODEL}`;
+  const url = `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetch(url);
     if (res.ok) return Buffer.from(await res.arrayBuffer());
