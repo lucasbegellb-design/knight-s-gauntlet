@@ -1,12 +1,5 @@
 [
   {
-    "id": "roguish_blade",
-    "category": "companions",
-    "style": "pixelArt",
-    "prompt": "a quick roguish swordsman in a hood with twin daggers, agile pose",
-    "frame": "attack"
-  },
-  {
     "id": "iron_vanguard",
     "category": "companions",
     "style": "pixelArt",
