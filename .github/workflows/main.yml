@@ -23,6 +23,14 @@ on:
       - 'claude/game-improvement-plan-a3e41j'
   workflow_dispatch:
 
+# GitHub Pages allows exactly one deployment in flight per site. Without this, two pushes close
+# together race and the second dies with "Deployment request failed ... due to in progress
+# deployment" — a red run caused purely by timing, with nothing wrong in the commit. Queue instead
+# of cancelling so the newest push is always the one that ends up published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
