@@ -37,6 +37,8 @@ export interface RunSnapshot {
   heroClassName: string;
   monsterName: string;
   monsterTier: MonsterTier;
+  /** True when the current wave's monster is an Echo of the hero's own stats — see WaveManager. */
+  isEcho: boolean;
   monsterHp: number;
   monsterMaxHp: number;
   heroLevel: number;
@@ -76,6 +78,7 @@ const initialSnapshot: RunSnapshot = {
   heroClassName: 'Knight',
   monsterName: '',
   monsterTier: 'normal',
+  isEcho: false,
   monsterHp: 0,
   monsterMaxHp: 0,
   heroLevel: 1,

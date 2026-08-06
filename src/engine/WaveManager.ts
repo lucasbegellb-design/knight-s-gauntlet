@@ -32,6 +32,41 @@ export const MAX_ACTIVE_SPELLS = 2;
 const FORGE_BONUS_PER_LEVEL = 0.01;
 /** Permanent stat boost per companion upgrade rank (meta-progression). */
 const COMPANION_RANK_BONUS_PER_LEVEL = 0.08;
+/**
+ * Companion attack/heal output scales with the hero's own level, same axis the hero's own attack
+ * already grows on. Without this, a companion's flat `attack`/`healAmount` stays fixed for the
+ * entire run while monster stats keep compounding via `scaledMonsterStats` — companions were
+ * reasonably tuned for wave 1 but fell further behind every wave after, which read as "companions
+ * are weak" even though their base numbers were fine in isolation. HP intentionally isn't scaled
+ * here — see the existing rank-bonus comment below on why companion maxHp must stay stable across
+ * waves for the wave-clear-heal-fraction bookkeeping to work.
+ */
+const COMPANION_LEVEL_SCALING_PER_LEVEL = 0.05;
+
+/**
+ * Echo of Yourself — every ECHO_WAVE_INTERVAL waves, the wave's monster is replaced by a mirror of
+ * the hero's own current effective combat stats (level + gear + relic bonuses already baked in,
+ * the same numbers the hero itself fights with) instead of a bestiary entry. It's the one encounter
+ * in the game whose difficulty is a direct readout of the player's own build rather than external
+ * content: a glass-cannon build with no lifesteal/HP investment gets punished by exactly that
+ * weakness reflected back. Deliberately doesn't grant the Echo the hero's crit/burn/lifesteal rolls
+ * (monsters never consult modifiers — a Phase 3 architectural decision kept intact here); a flat
+ * mirror of the raw numbers is already a genuine fight without touching that boundary. Can land on
+ * the same wave as a miniboss/boss/megaboss — Echo wins that wave, tier is kept for reward-table
+ * purposes only (Broken Parts drop table, etc.), not for its stats.
+ */
+const ECHO_WAVE_INTERVAL = 15;
+/** The Echo fights at a fraction of the hero's own power, not 1:1 — a fair fight, not an unwinnable wall. */
+const ECHO_POWER_FRACTION = 0.9;
+const ECHO_ID = 'echo_of_self';
+/** The Echo isn't a bestiary entry so it has no authored xpReward — approximates what a same-tier monster would give. */
+const ECHO_XP_REWARD_BY_TIER: Record<MonsterTier, number> = {
+  normal: 12,
+  miniboss: 45,
+  boss: 130,
+  megaboss: 600,
+  ultraboss: 4000,
+};
 
 /**
  * Permanent meta-progression bonuses carried into a run from the HUB
@@ -93,6 +128,8 @@ export interface RunState {
   endReason: 'death' | 'abandoned';
   monsterTier: MonsterTier;
   monsterName: string;
+  /** True when the current wave's monster is an Echo of the hero's own stats, not a bestiary entry. */
+  isEcho: boolean;
   zoneId: string;
   zoneName: string;
   gold: number;
@@ -112,7 +149,7 @@ export type WaveEvent =
   | {
       type: 'waveStarted';
       waveNumber: number;
-      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number };
+      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number; isEcho: boolean };
       zone: { id: string; name: string; isNewZone: boolean };
     }
   | { type: 'waveCleared'; waveNumber: number; xpGained: number }
@@ -187,6 +224,7 @@ export class WaveManager {
       endReason: 'death',
       monsterTier: 'normal',
       monsterName: '',
+      isEcho: false,
       zoneId: '',
       zoneName: '',
       gold: 0,
@@ -250,7 +288,14 @@ export class WaveManager {
     events.push({
       type: 'waveStarted',
       waveNumber: this.state.waveNumber,
-      monster: { id: monster.id, name: monster.name, tier: this.state.monsterTier, maxHp: monster.maxHp, attack: monster.attack },
+      monster: {
+        id: monster.id,
+        name: monster.name,
+        tier: this.state.monsterTier,
+        maxHp: monster.maxHp,
+        attack: monster.attack,
+        isEcho: this.state.isEcho,
+      },
       zone: { id: this.state.zoneId, name: this.state.zoneName, isNewZone: this.state.zoneId !== previousZoneId },
     });
 
@@ -371,6 +416,18 @@ export class WaveManager {
   /** Re-derives the content definition for whichever monster the active CombatEngine is fighting. */
   private currentMonsterDef(): MonsterDefinition {
     const monster = this.engine.getState().monster;
+    if (monster.id === ECHO_ID) {
+      // Not a bestiary entry — synthesize just enough of a definition to award tier-appropriate XP.
+      return {
+        id: ECHO_ID,
+        name: monster.name,
+        tier: this.state.monsterTier,
+        maxHp: monster.maxHp,
+        attack: monster.attack,
+        attackIntervalMs: monster.attackIntervalMs,
+        xpReward: ECHO_XP_REWARD_BY_TIER[this.state.monsterTier],
+      };
+    }
     const found = allMonsters.find((m) => m.id === monster.id);
     if (!found) {
       throw new Error(`Unknown monster id in active combat: ${monster.id}`);
@@ -459,14 +516,16 @@ export class WaveManager {
       // Upgrade ranks boost output (attack/healing), not HP — keeps hp bookkeeping in one consistent scale
       // across waves (maxHp never changes for a companion, unlike the hero's level-driven growth).
       const rankBonus = 1 + (this.metaBonuses.companionUpgrades[owned.id] ?? 0) * COMPANION_RANK_BONUS_PER_LEVEL;
-      const upgradedAttack = Math.round(def.attack * rankBonus);
+      const levelBonus = 1 + (this.state.heroProgress.level - 1) * COMPANION_LEVEL_SCALING_PER_LEVEL;
+      const outputBonus = rankBonus * levelBonus;
+      const upgradedAttack = Math.round(def.attack * outputBonus);
       const combatant = buildCombatant(def.id, def.name, finalHp, scaledMaxHp, upgradedAttack, scaledIntervalMs);
       allies.push({
         combatant,
         role: def.role,
         actsIndependently: def.role !== 'support',
         tauntWeight: def.role === 'tank' ? 4 : 1,
-        healAmount: Math.round((def.healAmount ?? 0) * rankBonus),
+        healAmount: Math.round((def.healAmount ?? 0) * outputBonus),
         doubleStrikeChance: def.doubleStrikeChance ?? 0,
       });
     }
@@ -491,18 +550,30 @@ export class WaveManager {
     this.state.zoneId = zone.id;
     this.state.zoneName = zone.name;
 
-    const tierPool = TIER_POOLS[tier];
-    const pool = monsterPoolForWave(waveNumber, tierPool);
-    const def = pickFrom(pool, this.rng);
-    this.state.monsterName = def.name;
-
-    const scaled = scaledMonsterStats(def, waveNumber);
-    const monster = buildCombatant(def.id, def.name, scaled.maxHp, scaled.maxHp, scaled.attack, def.attackIntervalMs);
-
+    // Hero's real effective stats for this wave — computed before monster selection so an Echo
+    // wave can mirror them directly instead of picking from the bestiary.
     const modifiers = this.computeModifiers();
     const levelStats = statsForLevel(this.heroDef, this.state.heroProgress.level);
     const maxHp = Math.round(levelStats.maxHp * (1 + modifiers.maxHpBonusPercentSum));
     const attackIntervalMs = Math.round(levelStats.attackIntervalMs / (1 + modifiers.attackSpeedMultiplierSum));
+
+    this.state.isEcho = waveNumber > 0 && waveNumber % ECHO_WAVE_INTERVAL === 0;
+
+    let monster;
+    if (this.state.isEcho) {
+      const echoAttack = Math.max(1, Math.round((levelStats.attack + modifiers.flatDamageBonusSum) * (1 + modifiers.damageMultiplierSum) * ECHO_POWER_FRACTION));
+      const echoMaxHp = Math.max(1, Math.round(maxHp * ECHO_POWER_FRACTION));
+      const echoName = `Echo of ${this.heroDef.name}`;
+      this.state.monsterName = echoName;
+      monster = buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, attackIntervalMs);
+    } else {
+      const tierPool = TIER_POOLS[tier];
+      const pool = monsterPoolForWave(waveNumber, tierPool);
+      const def = pickFrom(pool, this.rng);
+      this.state.monsterName = def.name;
+      const scaled = scaledMonsterStats(def, waveNumber);
+      monster = buildCombatant(def.id, def.name, scaled.maxHp, scaled.maxHp, scaled.attack, def.attackIntervalMs);
+    }
 
     let heroHp = maxHp;
     if (carriedHeroHp !== undefined) {

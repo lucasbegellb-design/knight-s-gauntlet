@@ -294,6 +294,21 @@ body {
   animation: mythic-shimmer 3s linear infinite;
 }
 
+.tier-badge-echo {
+  background: rgba(139, 108, 247, 0.12);
+  animation: echo-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes echo-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 14px #8b6cf766;
+  }
+  50% {
+    box-shadow: 0 0 26px #b39dffcc;
+  }
+}
+
 .hud-value {
   font-size: 11px;
   color: var(--text-dim);

@@ -183,6 +183,24 @@ describe('WaveManager', () => {
     expect(manager.getRunState().monsterTier).toBe('ultraboss');
   });
 
+  it('replaces the monster with an Echo of the hero on Echo waves, mirroring the hero\'s own effective stats', () => {
+    const manager = new WaveManager(testHero, 7);
+    const casted = manager as unknown as { buildWaveEngine: (wave: number) => CombatEngine; engine: CombatEngine };
+
+    casted.engine = casted.buildWaveEngine(14);
+    expect(manager.getRunState().isEcho).toBe(false);
+
+    casted.engine = casted.buildWaveEngine(15);
+    const state = manager.getRunState();
+    expect(state.isEcho).toBe(true);
+    expect(state.monsterName).toContain('Echo');
+
+    const combat = manager.getCombatState();
+    // 90% of the hero's own effective HP/attack for that wave (ECHO_POWER_FRACTION), not a bestiary stat block.
+    expect(combat.monster.maxHp).toBe(Math.round(combat.hero.maxHp * 0.9));
+    expect(combat.monster.attack).toBe(Math.round(combat.hero.attack * 0.9));
+  });
+
   it('ends the run and stops ticking once the hero dies (without Phoenix Heart)', () => {
     const weakHero: HeroDefinition = {
       id: 'hero',
