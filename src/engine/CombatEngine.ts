@@ -1,6 +1,8 @@
 import { Rng } from './rng';
 import { NEUTRAL_MODIFIERS, type AggregatedModifiers } from './modifiers';
-import { affinityBetween, affinityMultiplier } from './elements';
+import { affinityBetween, affinityMultiplier, type Element } from './elements';
+import { resolveConditionals, type ConditionContext } from './conditionals';
+import type { ConditionalModifier } from '../data/relic.types';
 import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from './types';
 
 const BASE_CRIT_MULTIPLIER = 1.5;
@@ -28,6 +30,19 @@ const BURST_MANUAL_BONUS = 1.5;
 /** Healers contribute a party-wide heal instead of damage, at this multiple of their heal output. */
 const BURST_HEAL_MULTIPLIER = 1.8;
 const BURST_MANUAL_WINDOW_MS = 2600;
+
+/**
+ * Run-level facts a conditional can key off that the engine cannot see from one fight alone.
+ * WaveManager rebuilds the engine each wave, so this is a per-wave snapshot rather than a live
+ * reference — no back-pointer from the pure engine into the run sequencer.
+ */
+export interface RunConditionContext {
+  relicCount: number;
+  wavesCleared: number;
+  squadElements: Element[];
+}
+
+const DEFAULT_RUN_CONTEXT: RunConditionContext = { relicCount: 0, wavesCleared: 0, squadElements: [] };
 
 function pickWeightedUnit(pool: { unit: Combatant; weight: number }[], rng: Rng): Combatant {
   if (pool.length === 1) {
@@ -62,6 +77,8 @@ export class CombatEngine {
   private readonly heroId: string;
   private readonly partyModifiers: AggregatedModifiers;
   private readonly spells: SpellCaster[];
+  private readonly conditionals: ConditionalModifier[];
+  private readonly runContext: RunConditionContext;
   /** Elapsed time at which the gauge filled, used to expire the manual-trigger window. */
   private burstArmedAt = 0;
 
@@ -72,12 +89,16 @@ export class CombatEngine {
     partyModifiers: AggregatedModifiers = NEUTRAL_MODIFIERS,
     allies: AllyUnit[] = [],
     spells: SpellCaster[] = [],
+    conditionals: ConditionalModifier[] = [],
+    runContext: RunConditionContext = DEFAULT_RUN_CONTEXT,
   ) {
     this.state = { hero, monster, allies, elapsedMs: 0, isOver: false, winnerId: null, burstGauge: 0, burstArmed: false };
     this.rng = new Rng(seed);
     this.heroId = hero.id;
     this.partyModifiers = partyModifiers;
     this.spells = spells;
+    this.conditionals = conditionals;
+    this.runContext = runContext;
   }
 
   getState(): Readonly<CombatState> {
@@ -350,12 +371,26 @@ export class CombatEngine {
     const affinity = affinityBetween(attacker.element, target.element);
     const affinityMult = affinityMultiplier(attacker.element, target.element);
 
-    let damage = (attacker.attack * (1 + mod.damageMultiplierSum) + mod.flatDamageBonusSum) * affinityMult;
+    const conditional = resolveConditionals(this.conditionals, {
+      attackerHpFraction: attacker.maxHp > 0 ? attacker.hp / attacker.maxHp : 0,
+      targetHpFraction: target.maxHp > 0 ? target.hp / target.maxHp : 0,
+      affinity,
+      targetElement: target.element,
+      relicCount: this.runContext.relicCount,
+      wavesCleared: this.runContext.wavesCleared,
+      squadElements: this.runContext.squadElements,
+    } satisfies ConditionContext);
+
+    let damage =
+      (attacker.attack * (1 + mod.damageMultiplierSum) + mod.flatDamageBonusSum + conditional.flatDamage) *
+      affinityMult *
+      conditional.damageMultiplier;
 
     let isCrit = false;
-    if (mod.critChanceSum > 0 && this.rng.next() < mod.critChanceSum) {
+    const critChance = mod.critChanceSum + conditional.critChance;
+    if (critChance > 0 && this.rng.next() < critChance) {
       isCrit = true;
-      damage *= BASE_CRIT_MULTIPLIER + mod.critDamageMultiplierSum;
+      damage *= (BASE_CRIT_MULTIPLIER + mod.critDamageMultiplierSum) * conditional.onCritMultiplier;
       events.push({ type: 'critHit', targetId: target.id });
     }
 

@@ -4,6 +4,8 @@ import { applyXpGain, statsForLevel, type HeroProgress } from './heroProgression
 import { monsterPoolForWave, scaledMonsterStats, tierForWave, zoneForWave } from './waveScaling';
 import { rollBrokenParts } from './brokenParts';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
+import { collectConditionals } from './conditionals';
+import type { RunConditionContext } from './CombatEngine';
 import { generateLootOptions, type LootContext, type LootOption } from './loot';
 import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from './types';
 import type { HeroDefinition } from '../data/hero.types';
@@ -15,7 +17,7 @@ import { equipmentRegistry } from '../data/equipment';
 import { allCompanions, companionRegistry } from '../data/companions';
 import { spellRegistry } from '../data/spells';
 import { RARITY_POWER_MULTIPLIER, type Rarity } from '../data/rarity';
-import type { RelicModifier } from '../data/relic.types';
+import type { ConditionalModifier, RelicModifier } from '../data/relic.types';
 import type { Element } from './elements';
 
 /** Fraction of missing HP recovered on each wave clear, on top of any relic-granted regen. */
@@ -455,7 +457,16 @@ export class WaveManager {
     const { allies, spellCasters } = this.buildAlliesAndSpells(modifiers);
 
     this.seed += 1;
-    this.engine = new CombatEngine(hero, monster, this.seed, modifiers, allies, spellCasters);
+    this.engine = new CombatEngine(
+      hero,
+      monster,
+      this.seed,
+      modifiers,
+      allies,
+      spellCasters,
+      this.computeConditionals(),
+      this.runConditionContext(),
+    );
     events.push({ type: 'revived' });
     return true;
   }
@@ -481,6 +492,29 @@ export class WaveManager {
       throw new Error(`Unknown monster id in active combat: ${monster.id}`);
     }
     return found;
+  }
+
+  /**
+   * Conditionals currently come from relics alone. Equipment/talents/class stay purely additive on
+   * purpose: the combo layer is worth much more when a bounded, curated set of sources feeds it —
+   * spreading it across every content type would put the product term on almost every run and turn
+   * an interaction into a baseline.
+   */
+  private computeConditionals(): ConditionalModifier[] {
+    return collectConditionals(
+      this.state.ownedRelics.map((owned) => ({ conditionals: relicRegistry.get(owned.id).conditionals, count: owned.count })),
+    );
+  }
+
+  /** Per-wave snapshot of run-level facts the conditional predicates read. */
+  private runConditionContext(): RunConditionContext {
+    return {
+      relicCount: this.state.ownedRelics.length,
+      wavesCleared: Math.max(0, this.state.waveNumber - 1),
+      squadElements: this.state.companions
+        .filter((owned) => owned.hp > 0)
+        .map((owned) => companionRegistry.get(owned.id).element),
+    };
   }
 
   private ownedIdCountMap(owned: { id: string; count: number }[]): Map<string, number> {
@@ -643,6 +677,15 @@ export class WaveManager {
     const { allies, spellCasters } = this.buildAlliesAndSpells(modifiers);
 
     this.seed += 1;
-    return new CombatEngine(hero, monster, this.seed, modifiers, allies, spellCasters);
+    return new CombatEngine(
+      hero,
+      monster,
+      this.seed,
+      modifiers,
+      allies,
+      spellCasters,
+      this.computeConditionals(),
+      this.runConditionContext(),
+    );
   }
 }
