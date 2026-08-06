@@ -96,10 +96,19 @@ Brave-Frontier-style character summon, layered on top of the existing companion 
 
 Fixed. Single canonical workflow: `.github/workflows/main.yml` (do not re-add `static.yml` or a second Pages workflow — a prior session had 3 competing ones racing each other, which was the original blank-page bug). `vite.config.ts` uses `base: '/knight-s-gauntlet/'` (this exact repo name — don't change unless the repo is renamed). Runtime `game-assets/...` image paths in `src/ui/RarityIcon.tsx` are intentionally relative (no leading `/`) since literal strings ignore Vite's `base` config.
 
+**The trap that cost a whole session's deploys:** the workflow's `on.push.branches` list is
+explicit, and this repo's **default branch is `claude/knights-gauntlet-idle-rpg-0aiorv`** — there
+is no `main`, despite the name looking like a feature branch. When you start work on a new
+`claude/*` branch you must **add** it to that list. Miss it and every push succeeds, no failure is
+reported anywhere (the workflow simply never runs), and the live site silently stays on whatever
+the default branch last built. **Add, never swap** — removing the default branch breaks publishing
+the moment the pull request merges. Remove your development branch from the list once it is merged.
+The deploy is also gated behind `npm run lint` and `npm test` so a red build cannot publish.
+
 ## Balance state (measured, `npx vitest run src/engine/balanceSim.test.ts`)
 
-Naive always-pick-option-0 strategy, 100 seeds per class. Solo: 55-70/100 survivors past
-wave 10, median death wave 20-35. With a led starter squad: 100/100 past wave 10, median
+Naive always-pick-option-0 strategy, 100 seeds per class. Solo: 52-64/100 survivors past
+wave 10, median death wave 13-20 (group waves cost a few points). With a led starter squad: 100/100 past wave 10, median
 death wave 25-40. A **wave-20 wall** where every class and build died was fixed by giving
 each monster tier its own per-wave growth coefficient (`TIER_SCALING` in `waveScaling.ts`)
 — `normal` keeps the original 0.10/0.06 so the tuned early game is bit-for-bit unchanged.
