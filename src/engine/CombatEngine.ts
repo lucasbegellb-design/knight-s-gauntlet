@@ -3,6 +3,7 @@ import { NEUTRAL_MODIFIERS, type AggregatedModifiers } from './modifiers';
 import { affinityBetween, affinityMultiplier, type Element } from './elements';
 import { resolveConditionals, type ConditionContext } from './conditionals';
 import type { ConditionalModifier } from '../data/relic.types';
+import type { MonsterTraits } from '../data/affixes';
 import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from './types';
 
 const BASE_CRIT_MULTIPLIER = 1.5;
@@ -79,6 +80,8 @@ export class CombatEngine {
   private readonly spells: SpellCaster[];
   private readonly conditionals: ConditionalModifier[];
   private readonly runContext: RunConditionContext;
+  /** Monster-side rules (affixes and future per-monster abilities). Empty means the old behavior. */
+  private readonly monsterTraits: MonsterTraits;
   /** Elapsed time at which the gauge filled, used to expire the manual-trigger window. */
   private burstArmedAt = 0;
 
@@ -91,6 +94,7 @@ export class CombatEngine {
     spells: SpellCaster[] = [],
     conditionals: ConditionalModifier[] = [],
     runContext: RunConditionContext = DEFAULT_RUN_CONTEXT,
+    monsterTraits: MonsterTraits = {},
   ) {
     this.state = { hero, monster, allies, elapsedMs: 0, isOver: false, winnerId: null, burstGauge: 0, burstArmed: false };
     this.rng = new Rng(seed);
@@ -99,6 +103,7 @@ export class CombatEngine {
     this.spells = spells;
     this.conditionals = conditionals;
     this.runContext = runContext;
+    this.monsterTraits = monsterTraits;
   }
 
   getState(): Readonly<CombatState> {
@@ -148,6 +153,7 @@ export class CombatEngine {
       }
     }
 
+    this.applyMonsterRegen(targetElapsed - this.state.elapsedMs, events);
     this.state.elapsedMs = targetElapsed;
 
     // Auto-fire once the manual window lapses. Checked after the loop rather than inside it so a
@@ -173,7 +179,7 @@ export class CombatEngine {
   /** Adds charge to the party gauge, arming the burst the moment it fills. */
   private chargeBurst(amount: number, events: CombatEvent[]): void {
     if (this.state.burstArmed || this.state.isOver) return;
-    this.state.burstGauge = Math.min(1, this.state.burstGauge + amount);
+    this.state.burstGauge = Math.min(1, this.state.burstGauge + amount * (this.monsterTraits.burstFillMultiplier ?? 1));
     if (this.state.burstGauge >= 1) {
       this.state.burstArmed = true;
       this.burstArmedAt = this.state.elapsedMs;
@@ -253,6 +259,7 @@ export class CombatEngine {
 
     this.applyExecute(monster, events);
     this.applyLifesteal(hero, totalDamage, events);
+    this.applyThorns(hero, totalDamage, events);
     this.chargeBurst(BURST_FILL_PER_PARTY_ATTACK, events);
 
     if (monster.hp <= 0 && !this.state.isOver) {
@@ -274,9 +281,10 @@ export class CombatEngine {
     // Monsters still never consult `partyModifiers` (a Phase 3 boundary), but elemental affinity
     // is a property of the matchup rather than of the party's build, so it cuts both ways.
     const monsterAffinity = affinityBetween(monster.element, target.element);
-    const damage = Math.max(1, Math.round(monster.attack * affinityMultiplier(monster.element, target.element)));
+    const damage = Math.max(1, Math.round(this.monsterAttackValue() * affinityMultiplier(monster.element, target.element)));
     target.hp = Math.max(0, target.hp - damage);
     events.push({ type: 'attack', attackerId: monster.id, targetId: target.id, damage, targetHpAfter: target.hp });
+    this.applyMonsterLifesteal(damage, events);
     if (monsterAffinity !== 'neutral') {
       events.push({ type: 'affinity', attackerId: monster.id, targetId: target.id, affinity: monsterAffinity });
     }
@@ -320,6 +328,7 @@ export class CombatEngine {
     events.push({ type: 'attack', attackerId: ally.combatant.id, targetId: monster.id, damage, targetHpAfter: monster.hp });
     this.applyExecute(monster, events);
     this.applyLifesteal(ally.combatant, damage, events);
+    this.applyThorns(ally.combatant, damage, events);
     this.chargeBurst(BURST_FILL_PER_PARTY_ATTACK, events);
 
     if (ally.role === 'summoner' && ally.doubleStrikeChance > 0 && monster.hp > 0 && this.rng.next() < ally.doubleStrikeChance) {
@@ -408,7 +417,67 @@ export class CombatEngine {
       events.push({ type: 'affinity', attackerId: attacker.id, targetId: target.id, affinity });
     }
 
+    // Monster-side damage reduction is applied last so it reduces the whole hit, crit and burn
+    // included — an Armored enemy should feel armored against a crit, not only against chip damage.
+    if (target.id === this.state.monster.id && this.monsterTraits.damageReduction) {
+      damage *= 1 - this.monsterTraits.damageReduction;
+    }
+
     return Math.round(damage);
+  }
+
+  /** Regenerating affix: heals a fraction of max HP per second of combat, independent of turns. */
+  private applyMonsterRegen(dtMs: number, events: CombatEvent[]): void {
+    const fraction = this.monsterTraits.regenPerSecondFraction;
+    if (!fraction || this.state.isOver || dtMs <= 0) return;
+    const monster = this.state.monster;
+    if (monster.hp <= 0 || monster.hp >= monster.maxHp) return;
+
+    const healed = Math.min(monster.maxHp - monster.hp, Math.round(monster.maxHp * fraction * (dtMs / 1000)));
+    if (healed > 0) {
+      monster.hp += healed;
+      events.push({ type: 'monsterHeal', amount: healed, reason: 'regen' });
+    }
+  }
+
+  /** Thorns: the monster returns a fraction of every hit it takes to whoever landed it. */
+  private applyThorns(attacker: Combatant, damageDealt: number, events: CombatEvent[]): void {
+    const percent = this.monsterTraits.thornsPercent;
+    if (!percent || attacker.hp <= 0) return;
+
+    const thornsDamage = Math.round(damageDealt * percent);
+    if (thornsDamage <= 0) return;
+
+    attacker.hp = Math.max(0, attacker.hp - thornsDamage);
+    events.push({ type: 'thorns', attackerId: attacker.id, damage: thornsDamage });
+
+    if (attacker.hp <= 0) {
+      events.push({ type: 'death', combatantId: attacker.id });
+      if (attacker.id === this.heroId) this.endCombat(this.state.monster.id, events);
+    }
+  }
+
+  /** Monster lifesteal, mirroring the party's own but sourced from traits rather than modifiers. */
+  private applyMonsterLifesteal(damageDealt: number, events: CombatEvent[]): void {
+    const percent = this.monsterTraits.lifestealPercent;
+    if (!percent) return;
+    const monster = this.state.monster;
+    if (monster.hp <= 0) return;
+
+    const healed = Math.min(monster.maxHp - monster.hp, Math.round(damageDealt * percent));
+    if (healed > 0) {
+      monster.hp += healed;
+      events.push({ type: 'monsterHeal', amount: healed, reason: 'lifesteal' });
+    }
+  }
+
+  /** The monster's live attack value, doubling (or whatever the affix says) once it enrages. */
+  private monsterAttackValue(): number {
+    const monster = this.state.monster;
+    const { enrageThreshold, enrageAttackMultiplier } = this.monsterTraits;
+    if (!enrageThreshold || !enrageAttackMultiplier) return monster.attack;
+    const fraction = monster.maxHp > 0 ? monster.hp / monster.maxHp : 0;
+    return fraction <= enrageThreshold ? monster.attack * enrageAttackMultiplier : monster.attack;
   }
 
   private applyExecute(target: Combatant, events: CombatEvent[]): void {

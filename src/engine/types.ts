@@ -60,7 +60,11 @@ export type CombatEvent =
   /** The party gauge just filled: the burst is armed and awaiting either a manual trigger or the auto-fire timeout. */
   | { type: 'burstReady' }
   /** The whole squad fired. `manual` distinguishes a player-timed burst (bonus damage) from the auto-fire fallback. */
-  | { type: 'braveBurst'; manual: boolean; damage: number; healed: number; contributors: string[] };
+  | { type: 'braveBurst'; manual: boolean; damage: number; healed: number; contributors: string[] }
+  /** A Thorned monster returned part of a hit to whoever landed it. */
+  | { type: 'thorns'; attackerId: string; damage: number }
+  /** A monster healed itself — from an affix's lifesteal or its per-second regeneration. */
+  | { type: 'monsterHeal'; amount: number; reason: 'lifesteal' | 'regen' };
 
 export interface CombatState {
   hero: Combatant;

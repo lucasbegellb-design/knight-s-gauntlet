@@ -546,6 +546,7 @@ export class CombatScene extends Phaser.Scene {
       monsterName: combat.monster.name,
       monsterTier: run.monsterTier,
       isEcho: run.isEcho,
+      monsterAffix: run.monsterAffix,
       burstGauge: combat.burstGauge,
       burstArmed: combat.burstArmed,
       monsterHp: combat.monster.hp,

@@ -109,6 +109,15 @@ export function Hud() {
               </div>
             )
           )}
+          {state.monsterAffix && (
+            <div
+              className="affix-badge"
+              style={{ color: state.monsterAffix.color, borderColor: `${state.monsterAffix.color}66`, background: `${state.monsterAffix.color}14` }}
+              title={state.monsterAffix.description}
+            >
+              {state.monsterAffix.name.toUpperCase()}
+            </div>
+          )}
           <div className="hud-sublabel">
             {state.monsterName} <ElementBadge element={state.monsterElement} compact />
             <AffinityCallout attacker={state.heroElement} defender={state.monsterElement} />

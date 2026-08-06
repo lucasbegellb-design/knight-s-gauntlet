@@ -3,6 +3,8 @@ import { Rng } from './rng';
 import { applyXpGain, statsForLevel, type HeroProgress } from './heroProgression';
 import { monsterPoolForWave, scaledMonsterStats, tierForWave, zoneForWave } from './waveScaling';
 import { rollBrokenParts } from './brokenParts';
+import { rollWaveAffix } from './affixes';
+import type { WaveAffix } from '../data/affixes';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
 import { collectConditionals } from './conditionals';
 import type { RunConditionContext } from './CombatEngine';
@@ -135,6 +137,8 @@ export interface RunState {
   isEcho: boolean;
   /** Current monster's element, mirrored into run state so the HUD can show the matchup. */
   monsterElement?: Element;
+  /** Affix rolled onto the current wave, if any — see `src/engine/affixes.ts`. */
+  monsterAffix: WaveAffix | null;
   zoneId: string;
   zoneName: string;
   gold: number;
@@ -154,7 +158,7 @@ export type WaveEvent =
   | {
       type: 'waveStarted';
       waveNumber: number;
-      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number; isEcho: boolean; element?: Element };
+      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number; isEcho: boolean; element?: Element; affix: WaveAffix | null };
       zone: { id: string; name: string; isNewZone: boolean };
     }
   | { type: 'waveCleared'; waveNumber: number; xpGained: number }
@@ -207,6 +211,8 @@ export class WaveManager {
   private readonly rng: Rng;
   /** Separate RNG stream for Broken Parts drops so adding/removing that roll never shifts monster-pick or loot-roll sequences elsewhere. */
   private readonly brokenPartsRng: Rng;
+  /** Likewise for affix rolls — an independent stream keeps existing seeded expectations stable. */
+  private readonly affixRng: Rng;
   private readonly metaBonuses: MetaBonuses;
   private readonly unlockedCompanionIds: Set<string>;
   private seed: number;
@@ -236,6 +242,7 @@ export class WaveManager {
     this.heroDef = heroDef;
     this.rng = new Rng(seed);
     this.brokenPartsRng = new Rng(seed + 90210);
+    this.affixRng = new Rng(seed + 13377);
     this.seed = seed;
     this.metaBonuses = metaBonuses;
     this.unlockedCompanionIds = new Set(unlockedCompanionIds);
@@ -247,6 +254,7 @@ export class WaveManager {
       monsterTier: 'normal',
       monsterName: '',
       isEcho: false,
+      monsterAffix: null,
       zoneId: '',
       zoneName: '',
       gold: 0,
@@ -343,6 +351,7 @@ export class WaveManager {
         attack: monster.attack,
         isEcho: this.state.isEcho,
         element: monster.element,
+        affix: this.state.monsterAffix,
       },
       zone: { id: this.state.zoneId, name: this.state.zoneName, isNewZone: this.state.zoneId !== previousZoneId },
     });
@@ -466,6 +475,7 @@ export class WaveManager {
       spellCasters,
       this.computeConditionals(),
       this.runConditionContext(),
+      this.state.monsterAffix?.traits ?? {},
     );
     events.push({ type: 'revived' });
     return true;
@@ -655,6 +665,9 @@ export class WaveManager {
       const echoName = `Echo of ${this.heroDef.name}`;
       this.state.monsterName = echoName;
       this.state.monsterElement = this.heroDef.element;
+      // The Echo deliberately never rolls an affix: its whole premise is being an exact readout of
+      // the player's own build, and a bolted-on modifier would break that reading.
+      this.state.monsterAffix = null;
       monster = buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, attackIntervalMs, this.heroDef.element);
     } else {
       const tierPool = TIER_POOLS[tier];
@@ -663,7 +676,15 @@ export class WaveManager {
       this.state.monsterName = def.name;
       this.state.monsterElement = def.element;
       const scaled = scaledMonsterStats(def, waveNumber);
-      monster = buildCombatant(def.id, def.name, scaled.maxHp, scaled.maxHp, scaled.attack, def.attackIntervalMs, def.element);
+      const affix = rollWaveAffix(waveNumber, tier, this.affixRng);
+      this.state.monsterAffix = affix;
+
+      const affixedHp = Math.max(1, Math.round(scaled.maxHp * (affix?.hpMultiplier ?? 1)));
+      const affixedAttack = Math.max(1, Math.round(scaled.attack * (affix?.attackMultiplier ?? 1)));
+      const affixedInterval = Math.max(120, Math.round(def.attackIntervalMs * (affix?.attackIntervalMultiplier ?? 1)));
+
+      if (affix) this.state.monsterName = `${affix.name} ${def.name}`;
+      monster = buildCombatant(def.id, this.state.monsterName, affixedHp, affixedHp, affixedAttack, affixedInterval, def.element);
     }
 
     let heroHp = maxHp;
@@ -686,6 +707,7 @@ export class WaveManager {
       spellCasters,
       this.computeConditionals(),
       this.runConditionContext(),
+      this.state.monsterAffix?.traits ?? {},
     );
   }
 }

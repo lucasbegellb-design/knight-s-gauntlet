@@ -1461,3 +1461,16 @@ body {
   color: #b98c8c;
 }
 .squad-actions { display: flex; justify-content: center; margin-top: 1.2rem; }
+
+/* ---- Wave affixes (data/affixes.ts) ---- */
+.affix-badge {
+  display: inline-block;
+  margin: 0 0 0.2rem 0.35rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  cursor: help;
+}

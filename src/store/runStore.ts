@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { MonsterTier } from '../data/monster.types';
 import type { Element } from '../engine/elements';
+import type { WaveAffix } from '../data/affixes';
 import type { EquipmentSlot } from '../data/equipment.types';
 import type { CompanionRole } from '../data/companion.types';
 import type { Rarity } from '../data/rarity';
@@ -42,6 +43,8 @@ export interface RunSnapshot {
   monsterTier: MonsterTier;
   /** True when the current wave's monster is an Echo of the hero's own stats — see WaveManager. */
   isEcho: boolean;
+  /** Affix rolled onto this wave's monster, if any. */
+  monsterAffix: WaveAffix | null;
   /** Party Brave Burst charge, 0..1. */
   burstGauge: number;
   /** True while the burst is armed and awaiting a manual trigger (or its auto-fire timeout). */
@@ -91,6 +94,7 @@ const initialSnapshot: RunSnapshot = {
   monsterName: '',
   monsterTier: 'normal',
   isEcho: false,
+  monsterAffix: null,
   burstGauge: 0,
   burstArmed: false,
   monsterHp: 0,
