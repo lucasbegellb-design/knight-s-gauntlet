@@ -1,4 +1,5 @@
 import { ELEMENT_META, affinityBetween, type Element } from '../engine/elements';
+import { ElementIcon } from './ElementIcon';
 
 /** A single element chip — symbol + label, tinted by the element's own color. */
 export function ElementBadge({ element, compact = false }: { element?: Element; compact?: boolean }) {
@@ -10,7 +11,7 @@ export function ElementBadge({ element, compact = false }: { element?: Element; 
       style={{ color: meta.color, borderColor: `${meta.color}55`, background: `${meta.color}14` }}
       title={meta.label}
     >
-      <span className="element-badge-symbol">{meta.symbol}</span>
+      <ElementIcon element={element} size={compact ? 12 : 14} />
       {!compact && <span>{meta.label}</span>}
     </span>
   );

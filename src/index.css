@@ -1594,3 +1594,5 @@ body {
 
 /* A tab with a single card shouldn't sit in half the width of a two-column grid. */
 .hub-panel-grid-single { grid-template-columns: 1fr; }
+
+.squad-coverage-threat { display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 700; }

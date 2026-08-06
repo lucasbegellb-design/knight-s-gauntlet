@@ -139,6 +139,9 @@ interface UnitView {
   /** Home position the attack lunge tween returns to; the hp bar/label stay pinned here regardless of the body's lunge offset. */
   baseX: number;
   baseY: number;
+  /** Affix aura ring behind the body, when the wave rolled one. Owned by the view so it is torn down with it. */
+  aura: Phaser.GameObjects.Ellipse | null;
+  auraTween: Phaser.Tweens.Tween | null;
   /** Texture keys for the idle/attack frames (attack may be undefined/not-yet-generated) — attackLunge swaps between them. */
   idleTextureKey?: string;
   attackTextureKey?: string;
@@ -363,6 +366,11 @@ export class CombatScene extends Phaser.Scene {
         attackTextureKey,
       );
       if ('setFlipX' in view.body) view.body.setFlipX(true);
+      // An affix changes how the fight has to be played, so it needs to be visible on the enemy
+      // itself, not only in a banner that scrolls past on spawn.
+      if (runState.monsterAffix) {
+        this.attachAffixAura(view, runState.monsterAffix.color, appearance.width * scale, appearance.height * scale);
+      }
       this.updateUnitView(view, monster.name, monster.hp, monster.maxHp);
       this.monsterViews.push(view);
     });
@@ -370,6 +378,25 @@ export class CombatScene extends Phaser.Scene {
 
   private isMonsterId(id: string): boolean {
     return this.waveManager.getCombatState().monsters.some((monster) => monster.id === id);
+  }
+
+  /** Adds a slowly pulsing coloured ring under an affixed enemy, matching the HUD badge's colour. */
+  private attachAffixAura(view: UnitView, color: string, width: number, height: number): void {
+    const tint = Phaser.Display.Color.HexStringToColor(color).color;
+    const aura = this.add
+      .ellipse(view.baseX, view.baseY + height / 2 - 6, width * 0.95, height * 0.3, tint, 0.3)
+      .setDepth(view.shadow.depth - 1);
+    view.aura = aura;
+    view.auraTween = this.tweens.add({
+      targets: aura,
+      scaleX: 1.18,
+      scaleY: 1.18,
+      alpha: 0.12,
+      duration: 900,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
   }
 
   /** Screen position of the wave's current focus target, for callouts that point at "the enemy". */
@@ -792,6 +819,8 @@ export class CombatScene extends Phaser.Scene {
       atbBarFill,
       hpLabel,
       idleTween: null,
+      aura: null,
+      auraTween: null,
       restTint: tint ?? 0xffffff,
       baseX: bodyX,
       baseY: bodyY,
@@ -815,6 +844,8 @@ export class CombatScene extends Phaser.Scene {
 
   private destroyUnitView(view: UnitView): void {
     view.idleTween?.stop();
+    view.auraTween?.stop();
+    view.aura?.destroy();
     view.body.destroy();
     view.shadow.destroy();
     view.hpBarBg.destroy();

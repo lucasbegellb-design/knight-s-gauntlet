@@ -3,6 +3,7 @@ import { classRegistry } from '../data/classes';
 import { useMetaStore } from '../store/metaStore';
 import { MAX_ACTIVE_COMPANIONS } from '../engine/WaveManager';
 import { ELEMENT_META, counteredBy, counters, type Element } from '../engine/elements';
+import { ElementIcon } from './ElementIcon';
 import { GeneratedPortrait } from './RarityIcon';
 import { ElementBadge } from './ElementBadge';
 import type { CompanionDefinition } from '../data/companion.types';
@@ -109,8 +110,8 @@ function CoverageNote({ heroElement, squad }: { heroElement: Element; squad: Ele
 
   return (
     <div className={`squad-coverage ${covered ? 'squad-coverage-ok' : 'squad-coverage-warn'}`}>
-      <span style={{ color: threatMeta.color }}>
-        {threatMeta.symbol} {threatMeta.label}
+      <span className="squad-coverage-threat" style={{ color: threatMeta.color }}>
+        <ElementIcon element={threat} size={13} /> {threatMeta.label}
       </span>{' '}
       enemies counter your class.{' '}
       {covered ? 'Your squad has an answer to them.' : 'Nobody in this squad answers them — you will take that matchup alone.'}

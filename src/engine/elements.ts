@@ -47,14 +47,18 @@ export const WEAK_MULTIPLIER = 0.75;
 
 export type Affinity = 'strong' | 'weak' | 'neutral';
 
-/** Human-facing element metadata; kept next to the rules so UI and engine never drift. */
-export const ELEMENT_META: Record<Element, { label: string; symbol: string; color: string }> = {
-  fire: { label: 'Fire', symbol: '🔥', color: '#ff6b3d' },
-  water: { label: 'Water', symbol: '💧', color: '#4db2ff' },
-  earth: { label: 'Earth', symbol: '🌿', color: '#7bc86c' },
-  thunder: { label: 'Thunder', symbol: '⚡', color: '#ffd84d' },
-  light: { label: 'Light', symbol: '✦', color: '#fff2c4' },
-  dark: { label: 'Dark', symbol: '☾', color: '#b07bff' },
+/**
+ * Human-facing element metadata; kept next to the rules so UI and engine never drift. Glyphs live
+ * in `ui/ElementIcon.tsx` as SVG rather than here as emoji — the emoji versions rendered from
+ * whichever font a platform substituted, and Light/Dark fell back to unrelated characters outright.
+ */
+export const ELEMENT_META: Record<Element, { label: string; color: string }> = {
+  fire: { label: 'Fire', color: '#ff6b3d' },
+  water: { label: 'Water', color: '#4db2ff' },
+  earth: { label: 'Earth', color: '#7bc86c' },
+  thunder: { label: 'Thunder', color: '#ffd84d' },
+  light: { label: 'Light', color: '#fff2c4' },
+  dark: { label: 'Dark', color: '#b07bff' },
 };
 
 /** What `attacker` scores against `defender`. Missing element on either side is always neutral. */
