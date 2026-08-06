@@ -5,15 +5,21 @@ permissions:
   pages: write
   id-token: write
 
-# Publishes from the default branch plus whichever `claude/*` branch is currently being
-# developed on. The branch list was previously pinned to a single feature branch that has since
-# been superseded, so an entire session's worth of pushes built nothing and the live site silently
-# stayed on the last commit of the dead branch. Keep this list in step with the active branch, and
-# drop branches once their pull request merges so a stale one cannot overwrite production.
+# Publishes from the repository's default branch plus whichever branch is under active
+# development.
+#
+# `claude/knights-gauntlet-idle-rpg-0aiorv` is this repo's default branch — it is not a stale
+# feature branch, despite the name, and pull requests target it. It was previously the *only*
+# entry here, which meant an entire session of work on a development branch pushed cleanly and
+# built nothing: the workflow simply never ran, so no failure was reported anywhere and the live
+# site silently stayed on the default branch's last commit.
+#
+# When adding a development branch, add it — never swap it for the default branch, or the deploy
+# breaks again the moment the pull request merges. Remove the development entry once merged.
 on:
   push:
     branches:
-      - main
+      - 'claude/knights-gauntlet-idle-rpg-0aiorv'
       - 'claude/game-improvement-plan-a3e41j'
   workflow_dispatch:
 
