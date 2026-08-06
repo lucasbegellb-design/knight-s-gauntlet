@@ -6,6 +6,29 @@ import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from 
 const BASE_CRIT_MULTIPLIER = 1.5;
 const BASE_BURN_RATIO = 0.4;
 
+/**
+ * Brave Burst — the party gauge, lifted from Brave Frontier and adapted to an idle game.
+ *
+ * The gauge fills from the party landing hits and from taking them, so it charges on any
+ * build rather than rewarding one stat. When it fills, the burst does *not* fire immediately:
+ * it arms, and the player has `BURST_MANUAL_WINDOW_MS` to trigger it themselves for a damage
+ * bonus. Miss the window and it auto-fires at base power.
+ *
+ * That window is the whole point. An idle game has no moment-to-moment input; this gives it
+ * exactly one, it is strictly optional, and skipping it costs a bonus rather than the burst —
+ * so an idling player loses nothing they had, while an attentive one is genuinely rewarded.
+ * It's the closest analogue to BF's spark timing that a no-input combat loop can carry.
+ */
+const BURST_FILL_PER_PARTY_ATTACK = 0.055;
+const BURST_FILL_PER_HIT_TAKEN = 0.09;
+/** Each burst contributor deals this multiple of its own attack, before affinity and party modifiers. */
+const BURST_ATTACK_MULTIPLIER = 2.4;
+/** Extra damage for firing inside the manual window instead of letting it auto-fire. */
+const BURST_MANUAL_BONUS = 1.5;
+/** Healers contribute a party-wide heal instead of damage, at this multiple of their heal output. */
+const BURST_HEAL_MULTIPLIER = 1.8;
+const BURST_MANUAL_WINDOW_MS = 2600;
+
 function pickWeightedUnit(pool: { unit: Combatant; weight: number }[], rng: Rng): Combatant {
   if (pool.length === 1) {
     return (pool[0] as { unit: Combatant; weight: number }).unit;
@@ -39,6 +62,8 @@ export class CombatEngine {
   private readonly heroId: string;
   private readonly partyModifiers: AggregatedModifiers;
   private readonly spells: SpellCaster[];
+  /** Elapsed time at which the gauge filled, used to expire the manual-trigger window. */
+  private burstArmedAt = 0;
 
   constructor(
     hero: Combatant,
@@ -48,7 +73,7 @@ export class CombatEngine {
     allies: AllyUnit[] = [],
     spells: SpellCaster[] = [],
   ) {
-    this.state = { hero, monster, allies, elapsedMs: 0, isOver: false, winnerId: null };
+    this.state = { hero, monster, allies, elapsedMs: 0, isOver: false, winnerId: null, burstGauge: 0, burstArmed: false };
     this.rng = new Rng(seed);
     this.heroId = hero.id;
     this.partyModifiers = partyModifiers;
@@ -103,7 +128,92 @@ export class CombatEngine {
     }
 
     this.state.elapsedMs = targetElapsed;
+
+    // Auto-fire once the manual window lapses. Checked after the loop rather than inside it so a
+    // burst never resolves in the middle of a same-timestamp exchange of attacks.
+    if (this.state.burstArmed && !this.state.isOver && this.state.elapsedMs - this.burstArmedAt >= BURST_MANUAL_WINDOW_MS) {
+      this.fireBurst(false, events);
+    }
+
     return events;
+  }
+
+  /**
+   * Player-triggered Brave Burst. Returns false (and does nothing) when the gauge isn't armed,
+   * so the UI can render a dead button rather than the caller having to guard.
+   */
+  triggerBurst(): CombatEvent[] {
+    const events: CombatEvent[] = [];
+    if (!this.state.burstArmed || this.state.isOver) return events;
+    this.fireBurst(true, events);
+    return events;
+  }
+
+  /** Adds charge to the party gauge, arming the burst the moment it fills. */
+  private chargeBurst(amount: number, events: CombatEvent[]): void {
+    if (this.state.burstArmed || this.state.isOver) return;
+    this.state.burstGauge = Math.min(1, this.state.burstGauge + amount);
+    if (this.state.burstGauge >= 1) {
+      this.state.burstArmed = true;
+      this.burstArmedAt = this.state.elapsedMs;
+      events.push({ type: 'burstReady' });
+    }
+  }
+
+  /**
+   * Resolves the squad-wide burst: every living non-healer contributes a heavy hit through the
+   * normal damage path (so party modifiers and elemental affinity both still apply), and every
+   * living healer converts its contribution into a party heal instead.
+   */
+  private fireBurst(manual: boolean, events: CombatEvent[]): void {
+    this.state.burstArmed = false;
+    this.state.burstGauge = 0;
+
+    const powerMultiplier = BURST_ATTACK_MULTIPLIER * (manual ? BURST_MANUAL_BONUS : 1);
+    const monster = this.state.monster;
+    const contributors: string[] = [];
+    let totalDamage = 0;
+    let totalHealed = 0;
+
+    const strike = (unit: Combatant): void => {
+      if (unit.hp <= 0 || monster.hp <= 0 || this.state.isOver) return;
+      contributors.push(unit.id);
+      // Route through a synthetic attacker so computeAttackDamage's crit/burn/affinity all apply
+      // to the burst exactly as they would to a normal hit, without duplicating that pipeline.
+      const burstUnit: Combatant = { ...unit, attack: unit.attack * powerMultiplier };
+      const damage = this.computeAttackDamage(burstUnit, monster, events);
+      monster.hp = Math.max(0, monster.hp - damage);
+      totalDamage += damage;
+      this.applyLifesteal(unit, damage, events);
+    };
+
+    if (this.state.hero.hp > 0) strike(this.state.hero);
+
+    for (const ally of this.state.allies) {
+      if (ally.combatant.hp <= 0) continue;
+      if (ally.role === 'healer') {
+        const amount = Math.round(ally.healAmount * BURST_HEAL_MULTIPLIER);
+        const targets = [this.state.hero, ...this.state.allies.map((a) => a.combatant)].filter((c) => c.hp > 0);
+        for (const target of targets) {
+          const healed = Math.min(target.maxHp - target.hp, amount);
+          if (healed > 0) {
+            target.hp += healed;
+            totalHealed += healed;
+          }
+        }
+        contributors.push(ally.combatant.id);
+        continue;
+      }
+      strike(ally.combatant);
+    }
+
+    this.applyExecute(monster, events);
+    events.push({ type: 'braveBurst', manual, damage: totalDamage, healed: totalHealed, contributors });
+
+    if (monster.hp <= 0 && !this.state.isOver) {
+      events.push({ type: 'death', combatantId: monster.id });
+      this.endCombat(this.heroId, events);
+    }
   }
 
   private endCombat(winnerId: string, events: CombatEvent[]): void {
@@ -122,6 +232,7 @@ export class CombatEngine {
 
     this.applyExecute(monster, events);
     this.applyLifesteal(hero, totalDamage, events);
+    this.chargeBurst(BURST_FILL_PER_PARTY_ATTACK, events);
 
     if (monster.hp <= 0 && !this.state.isOver) {
       events.push({ type: 'death', combatantId: monster.id });
@@ -150,6 +261,7 @@ export class CombatEngine {
     }
 
     this.applyReflect(monster, damage, events);
+    this.chargeBurst(BURST_FILL_PER_HIT_TAKEN, events);
 
     if (target.hp <= 0) {
       events.push({ type: 'death', combatantId: target.id });
@@ -187,6 +299,7 @@ export class CombatEngine {
     events.push({ type: 'attack', attackerId: ally.combatant.id, targetId: monster.id, damage, targetHpAfter: monster.hp });
     this.applyExecute(monster, events);
     this.applyLifesteal(ally.combatant, damage, events);
+    this.chargeBurst(BURST_FILL_PER_PARTY_ATTACK, events);
 
     if (ally.role === 'summoner' && ally.doubleStrikeChance > 0 && monster.hp > 0 && this.rng.next() < ally.doubleStrikeChance) {
       const bonusDamage = this.computeAttackDamage(ally.combatant, monster, events);

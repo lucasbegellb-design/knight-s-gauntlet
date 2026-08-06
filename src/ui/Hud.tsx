@@ -56,6 +56,35 @@ function Bar({ value, max, color }: { value: number; max: number; color: string 
   );
 }
 
+/**
+ * The party Brave Burst gauge — and the only input the combat loop has.
+ *
+ * While charging it is a passive readout. Once armed it becomes a button with a short window:
+ * hitting it fires the squad-wide burst at bonus power, ignoring it lets the engine auto-fire at
+ * base power a moment later. Nothing is lost by never touching it, which is the point — an idle
+ * game earns its one interaction only if declining it is still a complete way to play.
+ */
+function BraveBurstBar() {
+  const gauge = useRunStore((s) => s.burstGauge);
+  const armed = useRunStore((s) => s.burstArmed);
+  const requestBurst = useRunStore((s) => s.requestBurst);
+  const isGameOver = useRunStore((s) => s.isGameOver);
+
+  if (isGameOver) return null;
+
+  return (
+    <div className={`burst-row ${armed ? 'burst-row-armed' : ''}`}>
+      <span className="burst-label">Brave Burst</span>
+      <div className="burst-track">
+        <div className="burst-fill" style={{ width: `${Math.min(1, gauge) * 100}%` }} />
+      </div>
+      <button type="button" className="burst-button" disabled={!armed} onClick={() => requestBurst()}>
+        {armed ? 'UNLEASH ×1.5' : `${Math.round(Math.min(1, gauge) * 100)}%`}
+      </button>
+    </div>
+  );
+}
+
 export function Hud() {
   const state = useRunStore();
 
@@ -106,6 +135,8 @@ export function Hud() {
           </div>
         </div>
       </div>
+
+      <BraveBurstBar />
 
       <div className="hud-row">
         <span className="hud-sublabel">Speed</span>

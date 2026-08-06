@@ -9,6 +9,7 @@ import { forgeWeaponUpgradeCost, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWea
 import { allCompanions, STARTER_COMPANION_IDS } from '../data/companions';
 import { pullGacha, pullGachaMulti, nextPityState, DEFAULT_PITY_STATE, type GachaPullResult, type GachaPityState } from '../engine/gacha';
 import { pendingIdleEssence } from '../engine/idleEssence';
+import { MAX_ACTIVE_COMPANIONS as MAX_SQUAD_SIZE } from '../engine/WaveManager';
 import { territoryRegistry, lordRegistry } from '../data/kingdom';
 import { MAX_TREASURY_LEVEL, treasuryUpgradeCost } from '../engine/kingdom';
 
@@ -94,7 +95,7 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   discoveredCompanionIds: [],
 };
 
-export type Screen = 'hub' | 'classSelect' | 'run';
+export type Screen = 'hub' | 'classSelect' | 'squadSelect' | 'run';
 
 export interface StartingWeapon {
   defId: string;
@@ -123,8 +124,13 @@ interface MetaStore extends PersistedMeta {
   /** Chosen at the start of a run on the class-select screen; cleared once a fresh run's WaveManager is built. */
   selectedClassId: string | null;
   startingWeapon: StartingWeapon | null;
+  /** Squad chosen on the squad-select screen; index 0 is the leader. Transient, like selectedClassId. */
+  selectedCompanionIds: string[];
   setScreen: (screen: Screen) => void;
   chooseClass: (classId: string) => void;
+  toggleSquadCompanion: (companionId: string) => void;
+  promoteSquadLeader: (companionId: string) => void;
+  confirmSquad: () => void;
   depositCurrency: (amount: number) => void;
   depositBrokenParts: (amount: number) => void;
   purchaseTalentRank: (talentId: string) => void;
@@ -192,6 +198,7 @@ export const useMetaStore = create<MetaStore>((set) => ({
   hydrated: false,
   selectedClassId: null,
   startingWeapon: null,
+  selectedCompanionIds: [],
   setScreen: (screen) => set({ screen }),
   chooseClass: (classId) =>
     set(() => {
@@ -199,8 +206,24 @@ export const useMetaStore = create<MetaStore>((set) => ({
       const rng = new Rng(Date.now());
       const weaponId = classDef.weaponPool[Math.floor(rng.next() * classDef.weaponPool.length)] ?? classDef.weaponPool[0];
       const startingWeapon: StartingWeapon | null = weaponId ? { defId: weaponId, rarity: rollStartingWeaponRarity(rng) } : null;
-      return { selectedClassId: classId, startingWeapon, screen: 'run' };
+      // Class pick now leads into squad select rather than straight into the run.
+      return { selectedClassId: classId, startingWeapon, selectedCompanionIds: [], screen: 'squadSelect' as Screen };
     }),
+  toggleSquadCompanion: (companionId) =>
+    set((state) => {
+      const current = state.selectedCompanionIds;
+      if (current.includes(companionId)) {
+        return { selectedCompanionIds: current.filter((id) => id !== companionId) };
+      }
+      if (current.length >= MAX_SQUAD_SIZE) return state;
+      return { selectedCompanionIds: [...current, companionId] };
+    }),
+  promoteSquadLeader: (companionId) =>
+    set((state) => {
+      if (!state.selectedCompanionIds.includes(companionId)) return state;
+      return { selectedCompanionIds: [companionId, ...state.selectedCompanionIds.filter((id) => id !== companionId)] };
+    }),
+  confirmSquad: () => set({ screen: 'run' as Screen }),
   depositCurrency: (amount) => set((state) => ({ currency: state.currency + Math.max(0, amount) })),
   depositBrokenParts: (amount) => set((state) => ({ brokenParts: state.brokenParts + Math.max(0, amount) })),
   purchaseTalentRank: (talentId) =>

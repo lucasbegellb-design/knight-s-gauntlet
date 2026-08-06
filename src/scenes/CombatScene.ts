@@ -133,6 +133,7 @@ export class CombatScene extends Phaser.Scene {
   private zoneScrim: Phaser.GameObjects.Rectangle | null = null;
   private lastLootChoiceToken = 0;
   private lastAbandonRunToken = 0;
+  private lastBurstToken = 0;
   private heroTint = 0xffffff;
   private heroClassId = 'knight';
   /** Set by a critHit event, consumed by the attack event that immediately follows it (CombatEngine always emits them in that order). */
@@ -164,6 +165,7 @@ export class CombatScene extends Phaser.Scene {
   create(): void {
     this.lastLootChoiceToken = useRunStore.getState().lootChoiceRequest?.token ?? 0;
     this.lastAbandonRunToken = useRunStore.getState().abandonRunRequest?.token ?? 0;
+    this.lastBurstToken = useRunStore.getState().burstRequest?.token ?? 0;
     this.startNewRun();
   }
 
@@ -177,6 +179,13 @@ export class CombatScene extends Phaser.Scene {
       this.syncUnitViews();
       this.pushSnapshotToStore();
       return;
+    }
+
+    if (store.burstRequest && store.burstRequest.token !== this.lastBurstToken) {
+      this.lastBurstToken = store.burstRequest.token;
+      // A manual burst resolves immediately rather than waiting for the next tick, so the
+      // player's input and the on-screen impact land in the same frame.
+      this.handleEvents(this.waveManager.triggerBurst());
     }
 
     if (store.lootChoiceRequest && store.lootChoiceRequest.token !== this.lastLootChoiceToken) {
@@ -229,6 +238,7 @@ export class CombatScene extends Phaser.Scene {
       this.buildMetaBonuses(classDef.innateModifiers),
       startingEquipment,
       meta.unlockedCompanionIds,
+      meta.selectedCompanionIds,
     );
 
     const state = this.waveManager.getCombatState();
@@ -536,6 +546,8 @@ export class CombatScene extends Phaser.Scene {
       monsterName: combat.monster.name,
       monsterTier: run.monsterTier,
       isEcho: run.isEcho,
+      burstGauge: combat.burstGauge,
+      burstArmed: combat.burstArmed,
       monsterHp: combat.monster.hp,
       monsterMaxHp: combat.monster.maxHp,
       heroLevel: run.heroProgress.level,

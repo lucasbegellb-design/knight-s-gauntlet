@@ -42,6 +42,10 @@ export interface RunSnapshot {
   monsterTier: MonsterTier;
   /** True when the current wave's monster is an Echo of the hero's own stats — see WaveManager. */
   isEcho: boolean;
+  /** Party Brave Burst charge, 0..1. */
+  burstGauge: number;
+  /** True while the burst is armed and awaiting a manual trigger (or its auto-fire timeout). */
+  burstArmed: boolean;
   monsterHp: number;
   monsterMaxHp: number;
   heroLevel: number;
@@ -69,10 +73,13 @@ interface RunStore extends RunSnapshot {
   lootChoiceRequest: { token: number; index: number } | null;
   /** Bumped whenever the player chooses to flee a run in progress; the scene watches this to end it. */
   abandonRunRequest: { token: number } | null;
+  /** Bumped by the HUD's Burst button; the scene forwards it to WaveManager.triggerBurst(). */
+  burstRequest: { token: number } | null;
   setSnapshot: (snapshot: RunSnapshot) => void;
   setSpeed: (speed: CombatSpeed) => void;
   requestLootChoice: (index: number) => void;
   requestAbandonRun: () => void;
+  requestBurst: () => void;
 }
 
 const initialSnapshot: RunSnapshot = {
@@ -84,6 +91,8 @@ const initialSnapshot: RunSnapshot = {
   monsterName: '',
   monsterTier: 'normal',
   isEcho: false,
+  burstGauge: 0,
+  burstArmed: false,
   monsterHp: 0,
   monsterMaxHp: 0,
   heroLevel: 1,
@@ -109,9 +118,11 @@ export const useRunStore = create<RunStore>((set) => ({
   speed: 1,
   lootChoiceRequest: null,
   abandonRunRequest: null,
+  burstRequest: null,
   setSnapshot: (snapshot) => set(snapshot),
   setSpeed: (speed) => set({ speed }),
   requestLootChoice: (index) =>
     set((state) => ({ lootChoiceRequest: { token: (state.lootChoiceRequest?.token ?? 0) + 1, index } })),
   requestAbandonRun: () => set((state) => ({ abandonRunRequest: { token: (state.abandonRunRequest?.token ?? 0) + 1 } })),
+  requestBurst: () => set((state) => ({ burstRequest: { token: (state.burstRequest?.token ?? 0) + 1 } })),
 }));

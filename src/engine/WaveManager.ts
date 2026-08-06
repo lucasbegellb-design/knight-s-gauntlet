@@ -214,6 +214,8 @@ export class WaveManager {
   private pendingHeroHp = 0;
   /** Companion HP carried the same way, keyed by companion id. */
   private pendingCompanionHp = new Map<string, number>();
+  /** First companion of the pre-run squad; its leader skill applies party-wide while it lives. */
+  private leaderCompanionId: string | null = null;
 
   constructor(
     heroDef: HeroDefinition,
@@ -221,6 +223,13 @@ export class WaveManager {
     metaBonuses: MetaBonuses = DEFAULT_META_BONUSES,
     startingEquipment: Partial<EquippedItems> = {},
     unlockedCompanionIds: Iterable<string> = allCompanions.map((c) => c.id),
+    /**
+     * Squad chosen before the run (see `SquadSelect`). The first id is the leader — its
+     * `leaderSkill` applies party-wide while it lives. Empty keeps the pre-squad behavior of
+     * discovering companions purely through loot, which is still a valid way to play: bringing
+     * fewer companions leaves roster slots open, so companion loot options keep appearing.
+     */
+    startingCompanionIds: string[] = [],
   ) {
     this.heroDef = heroDef;
     this.rng = new Rng(seed);
@@ -249,7 +258,32 @@ export class WaveManager {
       lootOptions: [],
       hasUsedPhoenixRevive: false,
     };
+    this.state.companions = startingCompanionIds
+      .slice(0, MAX_ACTIVE_COMPANIONS)
+      .filter((id) => this.unlockedCompanionIds.has(id) && companionRegistry.tryGet(id) !== undefined)
+      .map((id) => ({ id, hp: companionRegistry.get(id).maxHp }));
+    this.leaderCompanionId = this.state.companions[0]?.id ?? null;
+
     this.engine = this.buildWaveEngine(1);
+  }
+
+  /** The squad leader's id, or null when the run started with no chosen squad. */
+  getLeaderCompanionId(): string | null {
+    return this.leaderCompanionId;
+  }
+
+  /** Forwards a player-timed Brave Burst to the active fight. No-op unless the gauge is armed. */
+  triggerBurst(): WaveEvent[] {
+    if (this.state.isGameOver || this.state.isChoosingLoot) return [];
+    const events = this.engine.triggerBurst().map((event) => ({ type: 'combat', event }) as WaveEvent);
+
+    // A manual burst can end the fight outright, so it goes through the same wave-cleared path a
+    // normal killing blow would rather than waiting for the next tick to notice.
+    const combatEnd = this.engine.getState().isOver;
+    if (combatEnd && events.length > 0 && this.engine.getState().winnerId === this.heroDef.id) {
+      this.handleWaveCleared(events);
+    }
+    return events;
   }
 
   getRunState(): Readonly<RunState> {
@@ -485,6 +519,12 @@ export class WaveManager {
       .filter((def) => def.role === 'support' && def.auraModifier)
       .map((def) => ({ modifiers: [def.auraModifier as RelicModifier], count: 1 }));
 
+    const leader = this.leaderCompanionId
+      ? this.state.companions.find((owned) => owned.id === this.leaderCompanionId && owned.hp > 0)
+      : undefined;
+    const leaderSkill = leader ? companionRegistry.get(leader.id).leaderSkill : undefined;
+    const leaderSources: ModifierSource[] = leaderSkill ? [{ modifiers: leaderSkill.modifiers, count: 1 }] : [];
+
     const brokenBladeSources: ModifierSource[] = this.state.ownedRelics.some((owned) => owned.id === BROKEN_BLADE_ID)
       ? [
           {
@@ -499,6 +539,7 @@ export class WaveManager {
       ...equipmentSources,
       ...passiveSpellSources,
       ...companionAuraSources,
+      ...leaderSources,
       ...brokenBladeSources,
       talentSource,
       classSource,

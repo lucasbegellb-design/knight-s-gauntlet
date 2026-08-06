@@ -3,6 +3,11 @@ import type { CompanionDefinition } from '../companion.types';
 export const campBard: CompanionDefinition = {
   id: 'camp_bard',
   element: 'water',
+  leaderSkill: {
+    name: 'Marching Song',
+    description: "Nobody asked for the drum. Everybody moves faster anyway.",
+    modifiers: [{ kind: 'attackSpeedMultiplier', value: 0.12 }, { kind: 'xpMultiplier', value: 0.15 }],
+  },
   name: 'Camp Bard',
   rarity: 'epic',
   role: 'support',

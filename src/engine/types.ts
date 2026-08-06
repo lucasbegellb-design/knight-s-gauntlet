@@ -56,7 +56,11 @@ export type CombatEvent =
   | { type: 'companionHeal'; healerId: string; targetId: string; amount: number }
   | { type: 'spellCast'; spellId: string; targetId: string; effect: SpellEffect; amount: number }
   /** Emitted alongside an `attack` whenever the elemental matchup wasn't neutral, so the UI can call it out. */
-  | { type: 'affinity'; attackerId: string; targetId: string; affinity: 'strong' | 'weak' };
+  | { type: 'affinity'; attackerId: string; targetId: string; affinity: 'strong' | 'weak' }
+  /** The party gauge just filled: the burst is armed and awaiting either a manual trigger or the auto-fire timeout. */
+  | { type: 'burstReady' }
+  /** The whole squad fired. `manual` distinguishes a player-timed burst (bonus damage) from the auto-fire fallback. */
+  | { type: 'braveBurst'; manual: boolean; damage: number; healed: number; contributors: string[] };
 
 export interface CombatState {
   hero: Combatant;
@@ -65,4 +69,8 @@ export interface CombatState {
   elapsedMs: number;
   isOver: boolean;
   winnerId: string | null;
+  /** Party Brave Burst charge, 0..1. Fills from damage dealt and taken — see CombatEngine. */
+  burstGauge: number;
+  /** True once the gauge filled and the burst is waiting to fire. */
+  burstArmed: boolean;
 }
