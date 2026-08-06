@@ -5,10 +5,16 @@ permissions:
   pages: write
   id-token: write
 
+# Publishes from the default branch plus whichever `claude/*` branch is currently being
+# developed on. The branch list was previously pinned to a single feature branch that has since
+# been superseded, so an entire session's worth of pushes built nothing and the live site silently
+# stayed on the last commit of the dead branch. Keep this list in step with the active branch, and
+# drop branches once their pull request merges so a stale one cannot overwrite production.
 on:
   push:
     branches:
-      - 'claude/knights-gauntlet-idle-rpg-0aiorv'
+      - main
+      - 'claude/game-improvement-plan-a3e41j'
   workflow_dispatch:
 
 jobs:
@@ -28,6 +34,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Fail the deploy on a broken build rather than publishing a stale artifact: lint and the
+      # engine test suite (including the balanceSim survival floor) gate the production build.
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --run
 
       - name: Build production
         run: npm run build
