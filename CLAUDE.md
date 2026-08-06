@@ -96,14 +96,23 @@ Brave-Frontier-style character summon, layered on top of the existing companion 
 
 Fixed. Single canonical workflow: `.github/workflows/main.yml` (do not re-add `static.yml` or a second Pages workflow — a prior session had 3 competing ones racing each other, which was the original blank-page bug). `vite.config.ts` uses `base: '/knight-s-gauntlet/'` (this exact repo name — don't change unless the repo is renamed). Runtime `game-assets/...` image paths in `src/ui/RarityIcon.tsx` are intentionally relative (no leading `/`) since literal strings ignore Vite's `base` config.
 
-**The trap that cost a whole session's deploys:** the workflow's `on.push.branches` list is
-explicit, and this repo's **default branch is `claude/knights-gauntlet-idle-rpg-0aiorv`** — there
-is no `main`, despite the name looking like a feature branch. When you start work on a new
-`claude/*` branch you must **add** it to that list. Miss it and every push succeeds, no failure is
-reported anywhere (the workflow simply never runs), and the live site silently stays on whatever
-the default branch last built. **Add, never swap** — removing the default branch breaks publishing
-the moment the pull request merges. Remove your development branch from the list once it is merged.
-The deploy is also gated behind `npm run lint` and `npm test` so a red build cannot publish.
+**This repo's default branch is `claude/knights-gauntlet-idle-rpg-0aiorv`** — there is no `main`,
+despite the name looking like a feature branch. Pull requests target it, and pushing to it is what
+publishes.
+
+The workflow used to gate on an explicit `on.push.branches` allowlist, which cost a whole session's
+deploys: a development branch missing from the list got **no CI and no deploy and no error** —
+every push succeeded, the workflow simply never ran, and the live site stayed on whatever the
+default branch last built. That shape is gone. It now runs on `pull_request` (so every PR gets CI
+regardless of branch name) and on `push` to the default branch (which publishes), with the deploy
+job gated on the event type. **Nothing to add when you start a branch, nothing to remove when it
+merges.** The deploy is behind `npm run lint` and `npm test`, so a red build cannot publish.
+
+**When a Pages deploy hangs:** `actions/deploy-pages` creating the deployment and then polling
+`deployment_in_progress` until its 10-minute timeout is a *GitHub-side* stall, not a repo problem —
+check https://www.githubstatus.com for a Pages incident before changing anything here. A stuck
+deploy also holds the single in-flight Pages slot, so later runs fail with "due to in progress
+deployment" naming the stuck SHA; cancel the stuck run to unblock the queue.
 
 ## Balance state (measured, `npx vitest run src/engine/balanceSim.test.ts`)
 

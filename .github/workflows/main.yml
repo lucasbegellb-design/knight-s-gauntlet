@@ -1,34 +1,30 @@
 name: Build and publish Pages
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
-# Publishes from the repository's default branch plus whichever branch is under active
-# development.
+# Two triggers, two jobs, no maintained branch list.
 #
-# `claude/knights-gauntlet-idle-rpg-0aiorv` is this repo's default branch — it is not a stale
-# feature branch, despite the name, and pull requests target it. It was previously the *only*
-# entry here, which meant an entire session of work on a development branch pushed cleanly and
-# built nothing: the workflow simply never ran, so no failure was reported anywhere and the live
-# site silently stayed on the default branch's last commit.
+# This used to be `on.push.branches` with an explicit allowlist, which is a trap: forgetting to add
+# your development branch produced *no CI and no deploy, and no error anywhere* — every push
+# succeeded, the workflow simply never ran, and the live site silently stayed on whatever the
+# default branch last built. An entire session's work was lost to it. An allowlist that fails
+# silently and has to be edited by hand for every new branch is the wrong shape, so it is gone.
 #
-# When adding a development branch, add it — never swap it for the default branch, or the deploy
-# breaks again the moment the pull request merges. Remove the development entry once merged.
+# `pull_request` gives every PR real CI regardless of what its branch is called, and `push` to the
+# default branch is what publishes. Nothing to remember, nothing to clean up after a merge.
 on:
+  pull_request:
   push:
     branches:
-      - 'claude/knights-gauntlet-idle-rpg-0aiorv'
-      - 'claude/game-improvement-plan-a3e41j'
+      - 'claude/knights-gauntlet-idle-rpg-0aiorv' # this repo's default branch, despite the name
   workflow_dispatch:
-
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,8 +38,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Fail the deploy on a broken build rather than publishing a stale artifact: lint and the
-      # engine test suite (including the balanceSim survival floor) gate the production build.
+      # Gate the artifact on a green build rather than publishing whatever compiles: lint and the
+      # engine test suite (including the balanceSim survival floor) run before it is produced.
       - name: Lint
         run: npm run lint
 
@@ -60,23 +56,19 @@ jobs:
 
   deploy:
     needs: build
-    # Only the default branch publishes.
+    # Publishing is a push-to-default-branch event only. A pull request builds and tests, it does
+    # not deploy — a branch under review has no business replacing the live site.
     #
-    # The `github-pages` environment restricts deployments to the default branch — GitHub's
-    # standard behaviour when the Pages source is "GitHub Actions". A deploy job started from any
-    # other branch does not fail: it sits waiting for an environment approval that never arrives,
-    # holds the one in-flight Pages deployment slot, and makes every subsequent run fail with
-    # "due to in progress deployment". That is what happened here — a stuck job from a feature
-    # branch turned three later runs red for reasons that had nothing to do with their commits.
-    #
-    # So development branches run lint, tests and the production build (real PR signal, and the
-    # build still has to compile), and publishing happens when the pull request merges.
-    if: github.ref == 'refs/heads/claude/knights-gauntlet-idle-rpg-0aiorv'
+    # (An earlier revision of this comment claimed the `github-pages` environment *forces* this by
+    # holding non-default-branch deploys for an approval that never arrives. That was wrong, and
+    # worth correcting rather than quietly deleting: the deployments were being created fine and
+    # then hanging at `deployment_in_progress` because GitHub Pages had an open "Deployment Lag"
+    # incident at the time. The gate below is a deliberate policy choice, not a workaround.)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     # Pages allows one deployment in flight per site, so overlapping publishes collide with
-    # "Deployment request failed ... due to in progress deployment". Scoped to this job rather
-    # than the whole workflow so a development branch's lint/test/build never queues behind a
-    # publish it isn't going to perform anyway. Queue rather than cancel, so the newest push is
-    # the one that ends up live.
+    # "Deployment request failed ... due to in progress deployment". Scoped to this job rather than
+    # the whole workflow so a pull request's lint/test/build never queues behind a publish it isn't
+    # going to perform. Queue rather than cancel, so the newest push is the one that ends up live.
     concurrency:
       group: pages
       cancel-in-progress: false
