@@ -48,10 +48,32 @@ const ESCALATION_INTERVAL = 100;
 const ESCALATION_HP_MULT = 1.12;
 const ESCALATION_ATTACK_MULT = 1.08;
 
+/**
+ * Per-wave growth coefficients, split by tier.
+ *
+ * These were a single pair (0.10 hp / 0.06 attack) for every tier, which produced a hard wall:
+ * balanceSim's death-wave distribution clustered on wave 20 for every class and every build,
+ * solo or squadded. The cause is that a boss's base stats already encode its tier jump (~9x a
+ * normal monster's attack), so applying the same linear coefficient widens the absolute gap
+ * between a normal wave and a boss wave every ten waves, faster than the hero's level curve
+ * closes it. Bosses therefore grow more slowly per wave than trash does.
+ *
+ * `normal` deliberately keeps the original 0.10/0.06 — the early-game curve tuned through this
+ * harness is left bit-for-bit intact, and only the tier spikes are softened.
+ */
+const TIER_SCALING: Record<MonsterTier, { hp: number; attack: number }> = {
+  normal: { hp: 0.1, attack: 0.06 },
+  miniboss: { hp: 0.085, attack: 0.045 },
+  boss: { hp: 0.075, attack: 0.038 },
+  megaboss: { hp: 0.07, attack: 0.032 },
+  ultraboss: { hp: 0.065, attack: 0.03 },
+};
+
 /** Controlled, mildly compounding difficulty curve applied on top of a monster's base stats. */
 export function scaledMonsterStats(def: MonsterDefinition, wave: number): { maxHp: number; attack: number } {
-  const hpMultiplier = 1 + wave * 0.1;
-  const attackMultiplier = 1 + wave * 0.06;
+  const scaling = TIER_SCALING[def.tier];
+  const hpMultiplier = 1 + wave * scaling.hp;
+  const attackMultiplier = 1 + wave * scaling.attack;
   const era = Math.floor(wave / ESCALATION_INTERVAL);
   const escalationHp = ESCALATION_HP_MULT ** era;
   const escalationAttack = ESCALATION_ATTACK_MULT ** era;

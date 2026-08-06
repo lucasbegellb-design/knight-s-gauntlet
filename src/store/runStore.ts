@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import type { MonsterTier } from '../data/monster.types';
+import type { Element } from '../engine/elements';
+import type { WaveAffix } from '../data/affixes';
+import type { EchoRecord } from '../engine/WaveManager';
 import type { EquipmentSlot } from '../data/equipment.types';
 import type { CompanionRole } from '../data/companion.types';
 import type { Rarity } from '../data/rarity';
@@ -35,12 +38,27 @@ export interface RunSnapshot {
   waveNumber: number;
   zoneName: string;
   heroClassName: string;
+  heroElement?: Element;
+  monsterElement?: Element;
   monsterName: string;
   monsterTier: MonsterTier;
   /** True when the current wave's monster is an Echo of the hero's own stats — see WaveManager. */
   isEcho: boolean;
+  /** Affix rolled onto this wave's monster, if any. */
+  monsterAffix: WaveAffix | null;
+  /** Set when this Echo is a resurrected past run rather than a live mirror. */
+  echoRecord: EchoRecord | null;
+  /** Party Brave Burst charge, 0..1. */
+  burstGauge: number;
+  /** True while the burst is armed and awaiting a manual trigger (or its auto-fire timeout). */
+  burstArmed: boolean;
   monsterHp: number;
   monsterMaxHp: number;
+  /** How many enemies this wave spawned, and how many are still standing. */
+  monsterCount: number;
+  monstersRemaining: number;
+  /** Empty companion slots — drives the Solitary Trial readout. */
+  emptyCompanionSlots: number;
   heroLevel: number;
   heroXp: number;
   heroXpToNext: number;
@@ -49,6 +67,8 @@ export interface RunSnapshot {
   isGameOver: boolean;
   /** Why the run ended — distinguishes a voluntary flee from a death, for the game-over overlay copy. */
   endReason: 'death' | 'abandoned';
+  /** What landed the killing blow, for the game-over copy. */
+  killedBy: { name: string; isEcho: boolean; echoRecord: EchoRecord | null } | null;
   gold: number;
   brokenParts: number;
   ownedRelics: OwnedRelicDisplay[];
@@ -66,21 +86,33 @@ interface RunStore extends RunSnapshot {
   lootChoiceRequest: { token: number; index: number } | null;
   /** Bumped whenever the player chooses to flee a run in progress; the scene watches this to end it. */
   abandonRunRequest: { token: number } | null;
+  /** Bumped by the HUD's Burst button; the scene forwards it to WaveManager.triggerBurst(). */
+  burstRequest: { token: number } | null;
   setSnapshot: (snapshot: RunSnapshot) => void;
   setSpeed: (speed: CombatSpeed) => void;
   requestLootChoice: (index: number) => void;
   requestAbandonRun: () => void;
+  requestBurst: () => void;
 }
 
 const initialSnapshot: RunSnapshot = {
   waveNumber: 1,
   zoneName: '',
   heroClassName: 'Knight',
+  heroElement: undefined,
+  monsterElement: undefined,
   monsterName: '',
   monsterTier: 'normal',
   isEcho: false,
+  monsterAffix: null,
+  echoRecord: null,
+  burstGauge: 0,
+  burstArmed: false,
   monsterHp: 0,
   monsterMaxHp: 0,
+  monsterCount: 1,
+  monstersRemaining: 1,
+  emptyCompanionSlots: 0,
   heroLevel: 1,
   heroXp: 0,
   heroXpToNext: 0,
@@ -88,6 +120,7 @@ const initialSnapshot: RunSnapshot = {
   heroMaxHp: 0,
   isGameOver: false,
   endReason: 'death',
+  killedBy: null,
   gold: 0,
   brokenParts: 0,
   ownedRelics: [],
@@ -104,9 +137,11 @@ export const useRunStore = create<RunStore>((set) => ({
   speed: 1,
   lootChoiceRequest: null,
   abandonRunRequest: null,
+  burstRequest: null,
   setSnapshot: (snapshot) => set(snapshot),
   setSpeed: (speed) => set({ speed }),
   requestLootChoice: (index) =>
     set((state) => ({ lootChoiceRequest: { token: (state.lootChoiceRequest?.token ?? 0) + 1, index } })),
   requestAbandonRun: () => set((state) => ({ abandonRunRequest: { token: (state.abandonRunRequest?.token ?? 0) + 1 } })),
+  requestBurst: () => set((state) => ({ burstRequest: { token: (state.burstRequest?.token ?? 0) + 1 } })),
 }));

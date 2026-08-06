@@ -9,6 +9,7 @@ export const speedPackRelics: RelicDefinition[] = [
     tags: ['speed'],
     stacking: 'stackable',
     description: 'Attack faster.',
+    flavor: "Makes standing still feel like a decision you are making badly.",
     modifiers: [{ kind: 'attackSpeedMultiplier', value: 0.05 }],
   },
   {
@@ -18,6 +19,7 @@ export const speedPackRelics: RelicDefinition[] = [
     tags: ['speed'],
     stacking: 'stackable',
     description: 'Attack faster.',
+    flavor: "Worn through at the toe. Never at the heel.",
     modifiers: [{ kind: 'attackSpeedMultiplier', value: 0.05 }],
   },
   {
@@ -27,6 +29,7 @@ export const speedPackRelics: RelicDefinition[] = [
     tags: ['speed'],
     stacking: 'stackable',
     description: 'Attack faster.',
+    flavor: "Carved in a hurry, which turned out to be the point.",
     modifiers: [{ kind: 'attackSpeedMultiplier', value: 0.05 }],
   },
   {
@@ -36,6 +39,7 @@ export const speedPackRelics: RelicDefinition[] = [
     tags: ['speed', 'crit'],
     stacking: 'stackable',
     description: 'Attack faster and land more critical hits.',
+    flavor: "Two hits in the time budgeted for one. Nobody audits this.",
     modifiers: [
       { kind: 'attackSpeedMultiplier', value: 0.08 },
       { kind: 'critChance', value: 0.02 },
@@ -48,6 +52,7 @@ export const speedPackRelics: RelicDefinition[] = [
     tags: ['speed'],
     stacking: 'stackable',
     description: 'Greatly increases attack speed.',
+    flavor: "Hums in still air. Screams in a fight.",
     modifiers: [{ kind: 'attackSpeedMultiplier', value: 0.1 }],
   },
   {
@@ -57,6 +62,7 @@ export const speedPackRelics: RelicDefinition[] = [
     tags: ['speed'],
     stacking: 'unique',
     description: 'Massively increases attack speed.',
+    flavor: "Witnesses disagree on where you were. All of them are right.",
     modifiers: [{ kind: 'attackSpeedMultiplier', value: 0.15 }],
   },
   {
@@ -66,6 +72,7 @@ export const speedPackRelics: RelicDefinition[] = [
     tags: ['speed'],
     stacking: 'unique',
     description: 'Increases attack speed and damage.',
+    flavor: "Broken off something that measured time. It resents this.",
     modifiers: [
       { kind: 'attackSpeedMultiplier', value: 0.1 },
       { kind: 'damageMultiplier', value: 0.05 },

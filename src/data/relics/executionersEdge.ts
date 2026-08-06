@@ -7,5 +7,6 @@ export const executionersEdge: RelicDefinition = {
   tags: ['crit'],
   stacking: 'unique',
   description: 'Instantly finish off enemies below 8% health.',
+  flavor: "Maintained daily by a professional who enjoys the work.",
   modifiers: [{ kind: 'executeThreshold', value: 0.08 }],
 };

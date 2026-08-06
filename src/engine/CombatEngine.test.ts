@@ -39,7 +39,7 @@ describe('CombatEngine', () => {
     const state = engine.getState();
 
     expect(state.hero.hp).toBe(20);
-    expect(state.monster.hp).toBe(30);
+    expect(state.monsters[0]!.hp).toBe(30);
     expect(state.isOver).toBe(false);
     expect(state.winnerId).toBeNull();
   });
@@ -52,7 +52,7 @@ describe('CombatEngine', () => {
     expect(events).toEqual([
       { type: 'attack', attackerId: 'hero', targetId: 'goblin_grunt', damage: 5, targetHpAfter: 25 },
     ]);
-    expect(engine.getState().monster.hp).toBe(25);
+    expect(engine.getState().monsters[0]!.hp).toBe(25);
   });
 
   it('drains the monster to 0 hp and declares the hero the winner', () => {
@@ -61,7 +61,7 @@ describe('CombatEngine', () => {
     const events = engine.tick(1000);
 
     expect(events.map((e) => e.type)).toEqual(['attack', 'death', 'combatEnd']);
-    expect(engine.getState().monster.hp).toBe(0);
+    expect(engine.getState().monsters[0]!.hp).toBe(0);
     expect(engine.getState().isOver).toBe(true);
     expect(engine.getState().winnerId).toBe('hero');
   });
@@ -164,7 +164,7 @@ describe('CombatEngine with hero modifiers', () => {
     const events = engine.tick(1000);
 
     expect(events.some((e) => e.type === 'execute')).toBe(true);
-    expect(engine.getState().monster.hp).toBe(0);
+    expect(engine.getState().monsters[0]!.hp).toBe(0);
     expect(engine.getState().isOver).toBe(true);
     expect(engine.getState().winnerId).toBe('hero');
   });
@@ -182,7 +182,7 @@ describe('CombatEngine with hero modifiers', () => {
 
     const reflectEvent = events.find((e) => e.type === 'reflect');
     expect(reflectEvent).toMatchObject({ damagedId: 'goblin_grunt', damage: 5 });
-    expect(engine.getState().monster.hp).toBe(95);
+    expect(engine.getState().monsters[0]!.hp).toBe(95);
   });
 });
 
@@ -217,7 +217,7 @@ describe('CombatEngine with allies', () => {
 
     const allyAttack = events.find((e) => e.type === 'attack' && e.attackerId === 'ally');
     expect(allyAttack).toMatchObject({ damage: 3 });
-    expect(engine.getState().monster.hp).toBe(97);
+    expect(engine.getState().monsters[0]!.hp).toBe(97);
   });
 
   it('lets a healer ally heal the lowest-hp ally instead of attacking the monster', () => {
@@ -238,7 +238,7 @@ describe('CombatEngine with allies', () => {
 
     expect(events.some((e) => e.type === 'companionHeal' && e.targetId === 'hero')).toBe(true);
     expect(engine.getState().hero.hp).toBe(15);
-    expect(engine.getState().monster.hp).toBe(30);
+    expect(engine.getState().monsters[0]!.hp).toBe(30);
   });
 
   it('never lets a support-flagged ally take a turn even if its timer would fire', () => {
@@ -258,7 +258,7 @@ describe('CombatEngine with allies', () => {
     const events = engine.tick(5000);
 
     expect(events.filter((e) => e.type === 'attack' && e.attackerId === 'support')).toHaveLength(0);
-    expect(engine.getState().monster.hp).toBe(100);
+    expect(engine.getState().monsters[0]!.hp).toBe(100);
   });
 
   it('does not end combat when a companion dies, only when hero or monster dies', () => {
@@ -373,7 +373,7 @@ describe('CombatEngine with allies', () => {
 
     const reflectEvent = events.find((e) => e.type === 'reflect');
     expect(reflectEvent).toMatchObject({ damagedId: 'goblin_grunt', damage: 5 });
-    expect(engine.getState().monster.hp).toBe(95);
+    expect(engine.getState().monsters[0]!.hp).toBe(95);
   });
 
   it('favors high taunt-weight allies (e.g. tanks) over the hero across many seeds', () => {
@@ -413,7 +413,7 @@ describe('CombatEngine with active spell casters', () => {
 
     const cast = events.find((e) => e.type === 'spellCast');
     expect(cast).toMatchObject({ spellId: 'spell', effect: 'damage', amount: 7 });
-    expect(engine.getState().monster.hp).toBe(93);
+    expect(engine.getState().monsters[0]!.hp).toBe(93);
   });
 
   it('lets an active heal spell restore the hero without touching the monster', () => {
@@ -431,7 +431,7 @@ describe('CombatEngine with active spell casters', () => {
 
     expect(events.some((e) => e.type === 'spellCast' && e.effect === 'heal')).toBe(true);
     expect(engine.getState().hero.hp).toBe(13);
-    expect(engine.getState().monster.hp).toBe(30);
+    expect(engine.getState().monsters[0]!.hp).toBe(30);
   });
 
   it('ends combat in the heros favor if a spell lands the killing blow', () => {

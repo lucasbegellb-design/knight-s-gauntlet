@@ -1,4 +1,5 @@
 import { Registry } from '../registry';
+import { comboPackRelics } from './comboPack';
 import type { RelicDefinition } from '../relic.types';
 import { emberFang } from './emberFang';
 import { cinderCore } from './cinderCore';
@@ -54,6 +55,7 @@ relicRegistry.registerAll([
   ...economyPackRelics,
   ...speedPackRelics,
   ...vitalityPackRelics,
+  ...comboPackRelics,
 ]);
 
 export const allRelics = relicRegistry.all();

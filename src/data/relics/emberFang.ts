@@ -7,5 +7,6 @@ export const emberFang: RelicDefinition = {
   tags: ['fire'],
   stacking: 'stackable',
   description: 'Your attacks have a chance to burn the enemy.',
+  flavor: "Bites, then keeps biting for a while afterward.",
   modifiers: [{ kind: 'burnChance', value: 0.08 }],
 };

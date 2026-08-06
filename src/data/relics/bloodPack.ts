@@ -9,6 +9,7 @@ export const bloodPackRelics: RelicDefinition[] = [
     tags: ['blood'],
     stacking: 'stackable',
     description: 'Heal for a portion of the damage you deal.',
+    flavor: "Fits badly on purpose. It wants a little of you too.",
     modifiers: [{ kind: 'lifestealPercent', value: 0.03 }],
   },
   {
@@ -18,6 +19,7 @@ export const bloodPackRelics: RelicDefinition[] = [
     tags: ['blood'],
     stacking: 'stackable',
     description: 'Heal for a portion of the damage you deal.',
+    flavor: "Sold as surgical suture. Used as neither.",
     modifiers: [{ kind: 'lifestealPercent', value: 0.03 }],
   },
   {
@@ -27,6 +29,7 @@ export const bloodPackRelics: RelicDefinition[] = [
     tags: ['blood'],
     stacking: 'stackable',
     description: 'Reflect a portion of damage taken back at attackers.',
+    flavor: "Rattles. Nobody has opened it to find out why.",
     modifiers: [{ kind: 'reflectDamagePercent', value: 0.05 }],
   },
   {
@@ -36,6 +39,7 @@ export const bloodPackRelics: RelicDefinition[] = [
     tags: ['blood', 'crit'],
     stacking: 'stackable',
     description: 'Heal on hit and strike with a touch more precision.',
+    flavor: "The Forge filed this under \"acceptable\".",
     modifiers: [
       { kind: 'lifestealPercent', value: 0.05 },
       { kind: 'critChance', value: 0.02 },
@@ -48,6 +52,7 @@ export const bloodPackRelics: RelicDefinition[] = [
     tags: ['blood', 'vitality'],
     stacking: 'stackable',
     description: 'Reflect damage taken, and heal for a portion of damage dealt.',
+    flavor: "The interest is collected up front and in person.",
     modifiers: [
       { kind: 'reflectDamagePercent', value: 0.08 },
       { kind: 'lifestealPercent', value: 0.03 },
@@ -60,6 +65,7 @@ export const bloodPackRelics: RelicDefinition[] = [
     tags: ['blood'],
     stacking: 'unique',
     description: 'Heals for a large portion of damage dealt, and finishes off badly wounded enemies.',
+    flavor: "Named by an engineer who was not asked to name things again.",
     modifiers: [
       { kind: 'lifestealPercent', value: 0.1 },
       { kind: 'executeThreshold', value: 0.02 },
@@ -72,6 +78,7 @@ export const bloodPackRelics: RelicDefinition[] = [
     tags: ['blood', 'vitality'],
     stacking: 'unique',
     description: 'Heals for a large portion of damage dealt, and increases maximum health.',
+    flavor: "Signed by both parties. Only one could hold a pen.",
     modifiers: [
       { kind: 'lifestealPercent', value: 0.08 },
       { kind: 'maxHpBonusPercent', value: 0.05 },

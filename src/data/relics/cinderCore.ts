@@ -7,5 +7,6 @@ export const cinderCore: RelicDefinition = {
   tags: ['fire'],
   stacking: 'stackable',
   description: 'Burning damage is increased.',
+  flavor: "Warm. Has been warm since before anyone alive was born.",
   modifiers: [{ kind: 'burnDamageMultiplier', value: 0.15 }],
 };

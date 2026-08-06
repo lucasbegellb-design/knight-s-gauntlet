@@ -7,5 +7,6 @@ export const wildfireHeart: RelicDefinition = {
   tags: ['fire', 'crit'],
   stacking: 'unique',
   description: 'Critical hits deal much greater burning damage.',
+  flavor: "Refuses containment, storage, and most forms of advice.",
   modifiers: [{ kind: 'critBurnBonusMultiplier', value: 0.6 }],
 };

@@ -9,6 +9,7 @@ export const critPackRelics: RelicDefinition[] = [
     tags: ['crit'],
     stacking: 'stackable',
     description: 'Increases critical hit chance.',
+    flavor: "Sharpened once, correctly, which is rarer than it sounds.",
     modifiers: [{ kind: 'critChance', value: 0.03 }],
   },
   {
@@ -18,6 +19,7 @@ export const critPackRelics: RelicDefinition[] = [
     tags: ['crit'],
     stacking: 'stackable',
     description: 'Increases critical hit damage.',
+    flavor: "Points at the part that matters. Only the part that matters.",
     modifiers: [{ kind: 'critDamageMultiplier', value: 0.1 }],
   },
   {
@@ -27,6 +29,7 @@ export const critPackRelics: RelicDefinition[] = [
     tags: ['crit'],
     stacking: 'stackable',
     description: 'Increases critical hit chance.',
+    flavor: "Belonged to someone with two. They needed only the one.",
     modifiers: [{ kind: 'critChance', value: 0.03 }],
   },
   {
@@ -36,6 +39,7 @@ export const critPackRelics: RelicDefinition[] = [
     tags: ['crit'],
     stacking: 'stackable',
     description: 'Increases both critical hit chance and damage.',
+    flavor: "The difference between a wound and a result.",
     modifiers: [
       { kind: 'critChance', value: 0.05 },
       { kind: 'critDamageMultiplier', value: 0.1 },
@@ -48,6 +52,7 @@ export const critPackRelics: RelicDefinition[] = [
     tags: ['crit'],
     stacking: 'stackable',
     description: 'Greatly increases critical hit damage.',
+    flavor: "Not courage. Courage involves doubt.",
     modifiers: [{ kind: 'critDamageMultiplier', value: 0.15 }],
   },
   {
@@ -57,6 +62,7 @@ export const critPackRelics: RelicDefinition[] = [
     tags: ['crit'],
     stacking: 'unique',
     description: 'Increases critical hit chance, and finishes off badly wounded enemies.',
+    flavor: "Everything else in the room stops being relevant.",
     modifiers: [
       { kind: 'critChance', value: 0.08 },
       { kind: 'executeThreshold', value: 0.03 },
@@ -69,6 +75,7 @@ export const critPackRelics: RelicDefinition[] = [
     tags: ['crit'],
     stacking: 'unique',
     description: 'Massively increases critical hit chance and damage.',
+    flavor: "Someone kept score. Someone else is the score.",
     modifiers: [
       { kind: 'critChance', value: 0.15 },
       { kind: 'critDamageMultiplier', value: 0.3 },

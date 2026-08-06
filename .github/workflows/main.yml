@@ -5,11 +5,24 @@ permissions:
   pages: write
   id-token: write
 
+# Publishes from the repository's default branch plus whichever branch is under active
+# development.
+#
+# `claude/knights-gauntlet-idle-rpg-0aiorv` is this repo's default branch — it is not a stale
+# feature branch, despite the name, and pull requests target it. It was previously the *only*
+# entry here, which meant an entire session of work on a development branch pushed cleanly and
+# built nothing: the workflow simply never ran, so no failure was reported anywhere and the live
+# site silently stayed on the default branch's last commit.
+#
+# When adding a development branch, add it — never swap it for the default branch, or the deploy
+# breaks again the moment the pull request merges. Remove the development entry once merged.
 on:
   push:
     branches:
       - 'claude/knights-gauntlet-idle-rpg-0aiorv'
+      - 'claude/game-improvement-plan-a3e41j'
   workflow_dispatch:
+
 
 jobs:
   build:
@@ -29,6 +42,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Fail the deploy on a broken build rather than publishing a stale artifact: lint and the
+      # engine test suite (including the balanceSim survival floor) gate the production build.
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --run
+
       - name: Build production
         run: npm run build
 
@@ -39,6 +60,26 @@ jobs:
 
   deploy:
     needs: build
+    # Only the default branch publishes.
+    #
+    # The `github-pages` environment restricts deployments to the default branch — GitHub's
+    # standard behaviour when the Pages source is "GitHub Actions". A deploy job started from any
+    # other branch does not fail: it sits waiting for an environment approval that never arrives,
+    # holds the one in-flight Pages deployment slot, and makes every subsequent run fail with
+    # "due to in progress deployment". That is what happened here — a stuck job from a feature
+    # branch turned three later runs red for reasons that had nothing to do with their commits.
+    #
+    # So development branches run lint, tests and the production build (real PR signal, and the
+    # build still has to compile), and publishing happens when the pull request merges.
+    if: github.ref == 'refs/heads/claude/knights-gauntlet-idle-rpg-0aiorv'
+    # Pages allows one deployment in flight per site, so overlapping publishes collide with
+    # "Deployment request failed ... due to in progress deployment". Scoped to this job rather
+    # than the whole workflow so a development branch's lint/test/build never queues behind a
+    # publish it isn't going to perform anyway. Queue rather than cancel, so the newest push is
+    # the one that ends up live.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       pages: write

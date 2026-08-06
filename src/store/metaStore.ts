@@ -9,6 +9,14 @@ import { forgeWeaponUpgradeCost, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWea
 import { allCompanions, STARTER_COMPANION_IDS } from '../data/companions';
 import { pullGacha, pullGachaMulti, nextPityState, DEFAULT_PITY_STATE, type GachaPullResult, type GachaPityState } from '../engine/gacha';
 import { pendingIdleEssence } from '../engine/idleEssence';
+import type { EchoRecord } from '../engine/WaveManager';
+import { EMPTY_PRESTIGE, canSealRecord, sigilReward, type PrestigeState } from '../engine/prestige';
+import { sigilRegistry } from '../data/prestige';
+import { setMuted } from '../audio/sfx';
+
+/** Keeps the persisted ladder bounded; older records describe builds the player has long outgrown. */
+export const MAX_ECHO_LADDER_ENTRIES = 12;
+import { MAX_ACTIVE_COMPANIONS as MAX_SQUAD_SIZE } from '../engine/WaveManager';
 import { territoryRegistry, lordRegistry } from '../data/kingdom';
 import { MAX_TREASURY_LEVEL, treasuryUpgradeCost } from '../engine/kingdom';
 
@@ -49,6 +57,12 @@ interface PersistedMeta {
   forgeWeaponLevel: number;
   /** Companions unlocked via the Gacha (src/ui/Gacha.tsx) — only these can appear in an in-run loot pool. */
   unlockedCompanionIds: string[];
+  /** Builds that have beaten an Echo, newest first — they return as Echoes in later runs. */
+  echoLadder: EchoRecord[];
+  /** Persisted audio preference; applied to the sfx module on hydrate and on toggle. */
+  audioMuted: boolean;
+  /** Prestige profile: sealed-record count, unspent Sigils, purchased sigil levels, deepest wave. */
+  prestige: PrestigeState;
   /** Pity streak counters carried across every pull (single and x10 alike) — see engine/gacha.ts. */
   gachaPity: GachaPityState;
   /** Kingdom territories conquered / lords recruited (see src/data/kingdom, src/engine/kingdom.ts) — a post-max-level essence sink. */
@@ -82,6 +96,9 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   brokenParts: 0,
   forgeWeaponLevel: 0,
   unlockedCompanionIds: [...STARTER_COMPANION_IDS],
+  echoLadder: [],
+  audioMuted: false,
+  prestige: EMPTY_PRESTIGE,
   gachaPity: { ...DEFAULT_PITY_STATE },
   conqueredTerritoryIds: [],
   recruitedLordIds: [],
@@ -94,7 +111,7 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   discoveredCompanionIds: [],
 };
 
-export type Screen = 'hub' | 'classSelect' | 'run';
+export type Screen = 'hub' | 'classSelect' | 'squadSelect' | 'run';
 
 export interface StartingWeapon {
   defId: string;
@@ -123,8 +140,13 @@ interface MetaStore extends PersistedMeta {
   /** Chosen at the start of a run on the class-select screen; cleared once a fresh run's WaveManager is built. */
   selectedClassId: string | null;
   startingWeapon: StartingWeapon | null;
+  /** Squad chosen on the squad-select screen; index 0 is the leader. Transient, like selectedClassId. */
+  selectedCompanionIds: string[];
   setScreen: (screen: Screen) => void;
   chooseClass: (classId: string) => void;
+  toggleSquadCompanion: (companionId: string) => void;
+  promoteSquadLeader: (companionId: string) => void;
+  confirmSquad: () => void;
   depositCurrency: (amount: number) => void;
   depositBrokenParts: (amount: number) => void;
   purchaseTalentRank: (talentId: string) => void;
@@ -143,6 +165,14 @@ interface MetaStore extends PersistedMeta {
   clearGachaResults: () => void;
   /** Deposits whatever idle essence has accrued since lastEssenceCollectionAt and resets the timer. */
   collectIdleEssence: () => void;
+  /** Records a build that just beat an Echo so it can return as one. */
+  recordEchoVictory: (record: EchoRecord) => void;
+  /** Records the deepest wave a run reached, which is what a seal pays out on. */
+  recordRunDepth: (wave: number) => void;
+  /** Ends this profile: resets essence-bought progression, keeps collection, pays Sigils. */
+  sealRecord: () => void;
+  purchaseSigilUpgrade: (upgradeId: string) => void;
+  toggleAudioMuted: () => void;
 }
 
 function persistedSlice(state: MetaStore): PersistedMeta {
@@ -156,6 +186,9 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     brokenParts: state.brokenParts,
     forgeWeaponLevel: state.forgeWeaponLevel,
     unlockedCompanionIds: state.unlockedCompanionIds,
+    echoLadder: state.echoLadder,
+    audioMuted: state.audioMuted,
+    prestige: state.prestige,
     gachaPity: state.gachaPity,
     conqueredTerritoryIds: state.conqueredTerritoryIds,
     recruitedLordIds: state.recruitedLordIds,
@@ -192,6 +225,7 @@ export const useMetaStore = create<MetaStore>((set) => ({
   hydrated: false,
   selectedClassId: null,
   startingWeapon: null,
+  selectedCompanionIds: [],
   setScreen: (screen) => set({ screen }),
   chooseClass: (classId) =>
     set(() => {
@@ -199,7 +233,81 @@ export const useMetaStore = create<MetaStore>((set) => ({
       const rng = new Rng(Date.now());
       const weaponId = classDef.weaponPool[Math.floor(rng.next() * classDef.weaponPool.length)] ?? classDef.weaponPool[0];
       const startingWeapon: StartingWeapon | null = weaponId ? { defId: weaponId, rarity: rollStartingWeaponRarity(rng) } : null;
-      return { selectedClassId: classId, startingWeapon, screen: 'run' };
+      // Class pick now leads into squad select rather than straight into the run.
+      return { selectedClassId: classId, startingWeapon, selectedCompanionIds: [], screen: 'squadSelect' as Screen };
+    }),
+  toggleSquadCompanion: (companionId) =>
+    set((state) => {
+      const current = state.selectedCompanionIds;
+      if (current.includes(companionId)) {
+        return { selectedCompanionIds: current.filter((id) => id !== companionId) };
+      }
+      if (current.length >= MAX_SQUAD_SIZE) return state;
+      return { selectedCompanionIds: [...current, companionId] };
+    }),
+  promoteSquadLeader: (companionId) =>
+    set((state) => {
+      if (!state.selectedCompanionIds.includes(companionId)) return state;
+      return { selectedCompanionIds: [companionId, ...state.selectedCompanionIds.filter((id) => id !== companionId)] };
+    }),
+  confirmSquad: () => set({ screen: 'run' as Screen }),
+  toggleAudioMuted: () =>
+    set((state) => {
+      const audioMuted = !state.audioMuted;
+      setMuted(audioMuted);
+      return { audioMuted };
+    }),
+  recordRunDepth: (wave) =>
+    set((state) => (wave > state.prestige.deepestWave ? { prestige: { ...state.prestige, deepestWave: wave } } : state)),
+  sealRecord: () =>
+    set((state) => {
+      if (!canSealRecord(state.prestige.deepestWave)) return state;
+      const earned = sigilReward(state.prestige.deepestWave);
+
+      // What survives is the design statement: everything the player *collected* stays, and
+      // everything they *bought with essence* resets. Taking back a collection is what makes a
+      // prestige feel like a punishment; taking back a spent currency is what gives it something
+      // to do again. Unlocked companions, ascension levels, the Grimoire and the Hall of Echoes
+      // are therefore all deliberately absent from this reset.
+      return {
+        currency: 0,
+        talentRanks: {},
+        companionUpgrades: {},
+        forgeLevel: 0,
+        brokenParts: 0,
+        forgeWeaponLevel: 0,
+        conqueredTerritoryIds: [],
+        recruitedLordIds: [],
+        treasuryLevel: 0,
+        prestige: {
+          count: state.prestige.count + 1,
+          sigils: state.prestige.sigils + earned,
+          upgrades: state.prestige.upgrades,
+          deepestWave: 0,
+        },
+        screen: 'hub' as Screen,
+      };
+    }),
+  purchaseSigilUpgrade: (upgradeId) =>
+    set((state) => {
+      const def = sigilRegistry.tryGet(upgradeId);
+      if (!def) return state;
+      const level = state.prestige.upgrades[upgradeId] ?? 0;
+      if (level >= def.maxLevel || state.prestige.sigils < def.cost) return state;
+      return {
+        prestige: {
+          ...state.prestige,
+          sigils: state.prestige.sigils - def.cost,
+          upgrades: { ...state.prestige.upgrades, [upgradeId]: level + 1 },
+        },
+      };
+    }),
+  recordEchoVictory: (record) =>
+    set((state) => {
+      // Newest first, and capped: an unbounded ladder would grow with every run forever, and the
+      // oldest records are the least interesting anyway (they describe builds long since outgrown).
+      const deduped = state.echoLadder.filter((entry) => !(entry.classId === record.classId && entry.wave === record.wave));
+      return { echoLadder: [record, ...deduped].slice(0, MAX_ECHO_LADDER_ENTRIES) };
     }),
   depositCurrency: (amount) => set((state) => ({ currency: state.currency + Math.max(0, amount) })),
   depositBrokenParts: (amount) => set((state) => ({ brokenParts: state.brokenParts + Math.max(0, amount) })),
@@ -341,6 +449,9 @@ void (async () => {
   try {
     const saved = await idbGet<PersistedMeta>(STORAGE_KEY);
     if (saved) useMetaStore.setState(saved);
+    // The sfx module holds its own mute flag (it is called from the Phaser loop and must not
+    // reach into the store), so the persisted preference has to be pushed to it on load.
+    setMuted(useMetaStore.getState().audioMuted);
   } finally {
     useMetaStore.setState({ hydrated: true });
     useMetaStore.subscribe((state) => {

@@ -9,7 +9,9 @@ import type { MonsterDefinition } from '../monster.types';
 export const milestoneBosses: MonsterDefinition[] = [
   {
     id: 'colossus_of_ash',
+    element: 'fire',
     name: 'Colossus of Ash',
+    flavor: "A hundred failed candidates, compacted for storage.",
     tier: 'megaboss',
     maxHp: 620,
     attack: 22,
@@ -18,7 +20,9 @@ export const milestoneBosses: MonsterDefinition[] = [
   },
   {
     id: 'gravemind_hydra',
+    element: 'dark',
     name: 'Gravemind Hydra',
+    flavor: "Every head remembers a different version of the project.",
     tier: 'megaboss',
     maxHp: 580,
     attack: 25,
@@ -27,7 +31,9 @@ export const milestoneBosses: MonsterDefinition[] = [
   },
   {
     id: 'the_unmaking',
+    element: 'light',
     name: 'The Unmaking',
+    flavor: "The Forge, finally reading its own output. It is not pleased.",
     tier: 'ultraboss',
     maxHp: 2100,
     attack: 60,

@@ -7,5 +7,6 @@ export const vampiricFang: RelicDefinition = {
   tags: ['blood'],
   stacking: 'stackable',
   description: 'Heal for a portion of the damage you deal.',
+  flavor: "Keeps itself. You are simply where it lives now.",
   modifiers: [{ kind: 'lifestealPercent', value: 0.05 }],
 };

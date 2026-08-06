@@ -7,5 +7,6 @@ export const killerInstinct: RelicDefinition = {
   tags: ['crit'],
   stacking: 'stackable',
   description: 'Increases critical hit damage.',
+  flavor: "You had it already. This just stops apologising for it.",
   modifiers: [{ kind: 'critDamageMultiplier', value: 0.2 }],
 };

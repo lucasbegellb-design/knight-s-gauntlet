@@ -7,5 +7,6 @@ export const guardiansBlessing: RelicDefinition = {
   tags: ['vitality'],
   stacking: 'stackable',
   description: 'Recover more health when clearing a wave.',
+  flavor: "A blessing in the sense that it was given without asking.",
   modifiers: [{ kind: 'regenPerWave', value: 0.1 }],
 };

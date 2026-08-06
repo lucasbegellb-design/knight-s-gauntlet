@@ -1,4 +1,5 @@
 import type { HeroBaseStats, HeroDefinition } from '../data/hero.types';
+import type { Element } from './elements';
 
 export interface HeroProgress {
   level: number;
@@ -24,9 +25,10 @@ export interface HeroStatMultiplier {
 }
 
 /** Produces a new HeroDefinition with base+growth scaled by a class's stat multipliers. Pure — the original is untouched. */
-export function scaleHeroDefinition(def: HeroDefinition, multiplier: HeroStatMultiplier): HeroDefinition {
+export function scaleHeroDefinition(def: HeroDefinition, multiplier: HeroStatMultiplier, element?: Element): HeroDefinition {
   return {
     ...def,
+    element: element ?? def.element,
     base: {
       maxHp: Math.round(def.base.maxHp * multiplier.maxHp),
       attack: Math.round(def.base.attack * multiplier.attack),

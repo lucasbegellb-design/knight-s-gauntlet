@@ -7,5 +7,6 @@ export const scholarsInsight: RelicDefinition = {
   tags: ['economy'],
   stacking: 'stackable',
   description: 'Earn more XP from clearing waves.',
+  flavor: "The realisation, without the fourteen years.",
   modifiers: [{ kind: 'xpMultiplier', value: 0.15 }],
 };

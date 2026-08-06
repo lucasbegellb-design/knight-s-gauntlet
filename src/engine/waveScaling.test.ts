@@ -42,6 +42,7 @@ describe('tierForWave', () => {
 describe('scaledMonsterStats', () => {
   const def: MonsterDefinition = {
     id: 'test_monster',
+    element: 'earth',
     name: 'Test Monster',
     tier: 'normal',
     maxHp: 100,
@@ -110,8 +111,8 @@ describe('zoneForWave', () => {
 });
 
 describe('monsterPoolForWave', () => {
-  const monsterA: MonsterDefinition = { id: 'monster_a', name: 'A', tier: 'normal', maxHp: 1, attack: 1, attackIntervalMs: 1, xpReward: 1 };
-  const monsterB: MonsterDefinition = { id: 'monster_b', name: 'B', tier: 'normal', maxHp: 1, attack: 1, attackIntervalMs: 1, xpReward: 1 };
+  const monsterA: MonsterDefinition = { id: 'monster_a', element: 'earth', name: 'A', tier: 'normal', maxHp: 1, attack: 1, attackIntervalMs: 1, xpReward: 1 };
+  const monsterB: MonsterDefinition = { id: 'monster_b', element: 'earth', name: 'B', tier: 'normal', maxHp: 1, attack: 1, attackIntervalMs: 1, xpReward: 1 };
 
   it('falls back to the full tier pool when no monster in it belongs to the active zone', () => {
     const pool = monsterPoolForWave(1, [monsterA, monsterB]);

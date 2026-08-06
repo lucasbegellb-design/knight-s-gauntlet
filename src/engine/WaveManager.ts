@@ -3,7 +3,14 @@ import { Rng } from './rng';
 import { applyXpGain, statsForLevel, type HeroProgress } from './heroProgression';
 import { monsterPoolForWave, scaledMonsterStats, tierForWave, zoneForWave } from './waveScaling';
 import { rollBrokenParts } from './brokenParts';
+import { rollWaveAffix } from './affixes';
+import type { MonsterTraits, WaveAffix } from '../data/affixes';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
+import { collectConditionals } from './conditionals';
+import { resolveSolitudeModifiers } from './solitude';
+import { NEUTRAL_PRESTIGE_RULES, type PrestigeRules } from './prestige';
+import type { RunConditionContext } from './CombatEngine';
+import { primaryMonster } from './CombatEngine';
 import { generateLootOptions, type LootContext, type LootOption } from './loot';
 import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from './types';
 import type { HeroDefinition } from '../data/hero.types';
@@ -15,7 +22,8 @@ import { equipmentRegistry } from '../data/equipment';
 import { allCompanions, companionRegistry } from '../data/companions';
 import { spellRegistry } from '../data/spells';
 import { RARITY_POWER_MULTIPLIER, type Rarity } from '../data/rarity';
-import type { RelicModifier } from '../data/relic.types';
+import type { ConditionalModifier, RelicModifier } from '../data/relic.types';
+import type { Element } from './elements';
 
 /** Fraction of missing HP recovered on each wave clear, on top of any relic-granted regen. */
 const WAVE_CLEAR_HEAL_FRACTION = 0.45;
@@ -59,6 +67,48 @@ const ECHO_WAVE_INTERVAL = 15;
 /** The Echo fights at a fraction of the hero's own power, not 1:1 — a fair fight, not an unwinnable wall. */
 const ECHO_POWER_FRACTION = 0.9;
 const ECHO_ID = 'echo_of_self';
+
+/**
+ * Group waves.
+ *
+ * A single enemy per wave meant every fight had exactly one shape: a damage race against one HP
+ * bar. Two or three enemies change the maths rather than just the numbers, because each keeps its
+ * own attack timer — a pack of three out-actions one monster of the same total health, so raw
+ * damage stops being the only answer and clear speed starts to matter.
+ *
+ * Only `normal` waves group. A boss is a duel and stays one, minibosses stay readable as a single
+ * threat, and the Echo is a mirror of one hero. Group size is capped and gated behind the opening
+ * waves so the game still teaches its baseline first.
+ */
+const GROUP_MIN_WAVE = 4;
+const MAX_GROUP_SIZE = 3;
+/** Chance a normal wave spawns extra enemies, climbing with depth up to the cap below. */
+const GROUP_BASE_CHANCE = 0.2;
+const GROUP_CHANCE_PER_WAVE = 0.008;
+const GROUP_MAX_CHANCE = 0.62;
+/** Chance a group that already has a second enemy gets a third. */
+const THIRD_ENEMY_CHANCE = 0.35;
+/**
+ * Each enemy in a group is individually weaker than a solo monster of the same wave, or a pack
+ * would simply be N times a fair fight. The total still exceeds one monster's worth — that surplus
+ * is the reward for a wave that also demands faster clearing.
+ */
+const GROUP_STAT_SCALE: Record<number, number> = { 1: 1, 2: 0.66, 3: 0.5 };
+/**
+ * Echo ladder — the one mechanic in this game that isn't standard to the genre, promoted from a
+ * curiosity every fifteen waves to the spine of the whole thing.
+ *
+ * Beating an Echo records the build that beat it. Later runs can then face *that* Echo instead of
+ * the live mirror: your own past attempts become the bestiary. The difficulty stops being a number
+ * someone tuned and becomes a history of your own decisions, which is the only thing this game
+ * does that nothing else does.
+ *
+ * Ladder Echoes only start appearing once a run is deep enough to have earned the reference, and
+ * they are scaled to the current wave rather than replayed at their recorded power — a wave-30
+ * ghost at wave-30 numbers would be free by wave 80.
+ */
+const ECHO_LADDER_MIN_WAVE = 30;
+const ECHO_LADDER_CHANCE = 0.5;
 /** The Echo isn't a bestiary entry so it has no authored xpReward — approximates what a same-tier monster would give. */
 const ECHO_XP_REWARD_BY_TIER: Record<MonsterTier, number> = {
   normal: 12,
@@ -74,6 +124,27 @@ const ECHO_XP_REWARD_BY_TIER: Record<MonsterTier, number> = {
  * data, computed by the caller (see `src/engine/talents.ts`) — WaveManager
  * stays framework-free and fully testable without touching the meta store.
  */
+/**
+ * A build that once beat an Echo, stored so it can come back as one. Ratios rather than raw
+ * numbers, so a record stays meaningful when it is replayed twenty waves deeper than it was set.
+ */
+export interface EchoRecord {
+  classId: string;
+  className: string;
+  element?: Element;
+  /** Wave the record was set on — surfaced in the Echo's name so the player recognises it. */
+  wave: number;
+  level: number;
+  /** Attack relative to the mirror the wave would otherwise have produced. */
+  attackRatio: number;
+  /** Max HP relative to the same. */
+  hpRatio: number;
+  attackIntervalMs: number;
+  critChance: number;
+  critDamageMultiplier: number;
+  lifestealPercent: number;
+}
+
 export interface MetaBonuses {
   talentModifiers: RelicModifier[];
   lootLuckBonus: number;
@@ -85,6 +156,10 @@ export interface MetaBonuses {
   forgeWeaponModifiers: RelicModifier[];
   /** Passive modifiers from conquered Kingdom territories/recruited lords/Royal Treasury level (see src/engine/kingdom.ts). */
   kingdomModifiers: RelicModifier[];
+  /** Past builds that beat an Echo, eligible to return as one. Newest first. */
+  echoLadder: EchoRecord[];
+  /** Rule changes bought with prestige Sigils. Not stat bonuses — see `engine/prestige.ts`. */
+  prestigeRules: PrestigeRules;
 }
 
 export const DEFAULT_META_BONUSES: MetaBonuses = {
@@ -95,6 +170,8 @@ export const DEFAULT_META_BONUSES: MetaBonuses = {
   classModifiers: [],
   forgeWeaponModifiers: [],
   kingdomModifiers: [],
+  echoLadder: [],
+  prestigeRules: NEUTRAL_PRESTIGE_RULES,
 };
 
 export interface OwnedRelic {
@@ -126,10 +203,22 @@ export interface RunState {
   isGameOver: boolean;
   /** Why the run ended — distinguishes a voluntary flee (abandonRun) from a death, for UI copy. */
   endReason: 'death' | 'abandoned';
+  /** What killed the run: the monster's display name, and whether it was an Echo. */
+  killedBy: { name: string; isEcho: boolean; echoRecord: EchoRecord | null } | null;
   monsterTier: MonsterTier;
   monsterName: string;
   /** True when the current wave's monster is an Echo of the hero's own stats, not a bestiary entry. */
   isEcho: boolean;
+  /** Current monster's element, mirrored into run state so the HUD can show the matchup. */
+  monsterElement?: Element;
+  /** Affix rolled onto the current wave, if any — see `src/engine/affixes.ts`. */
+  monsterAffix: WaveAffix | null;
+  /** Set when the current Echo is a resurrected past run rather than a live mirror. */
+  echoRecord: EchoRecord | null;
+  /** How many enemies this wave spawned. 1 for bosses, minibosses and Echoes. */
+  monsterGroupSize: number;
+  /** Empty companion slots this wave, driving the Solitary Trial bonus. 0 at full strength. */
+  emptyCompanionSlots: number;
   zoneId: string;
   zoneName: string;
   gold: number;
@@ -149,7 +238,7 @@ export type WaveEvent =
   | {
       type: 'waveStarted';
       waveNumber: number;
-      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number; isEcho: boolean };
+      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number; isEcho: boolean; element?: Element; affix: WaveAffix | null; echoRecord: EchoRecord | null };
       zone: { id: string; name: string; isNewZone: boolean };
     }
   | { type: 'waveCleared'; waveNumber: number; xpGained: number }
@@ -158,7 +247,11 @@ export type WaveEvent =
   | { type: 'lootOffered'; options: LootOption[] }
   | { type: 'lootChosen'; option: LootOption }
   | { type: 'revived' }
-  | { type: 'runOver'; waveNumber: number };
+  | { type: 'runOver'; waveNumber: number }
+  /** An Echo wave was cleared — carries the record to add to the ladder. */
+  | { type: 'echoDefeated'; record: EchoRecord }
+  /** This Echo wave resurrected a past run rather than mirroring the current one. */
+  | { type: 'echoFromLadder'; record: EchoRecord };
 
 function pickFrom(list: MonsterDefinition[], rng: Rng): MonsterDefinition {
   if (list.length === 0) {
@@ -168,8 +261,18 @@ function pickFrom(list: MonsterDefinition[], rng: Rng): MonsterDefinition {
   return list[Math.min(index, list.length - 1)] as MonsterDefinition;
 }
 
-function buildCombatant(id: string, name: string, hp: number, maxHp: number, attack: number, attackIntervalMs: number): Combatant {
-  return { id, name, hp, maxHp, attack, attackIntervalMs, nextAttackAt: attackIntervalMs };
+function buildCombatant(
+  id: string,
+  name: string,
+  hp: number,
+  maxHp: number,
+  attack: number,
+  attackIntervalMs: number,
+  element?: Element,
+  /** Delay added to the first swing; used to stagger a group so it doesn't act in unison. */
+  startOffsetMs = 0,
+): Combatant {
+  return { id, name, hp, maxHp, attack, attackIntervalMs, nextAttackAt: attackIntervalMs + startOffsetMs, element };
 }
 
 const TIER_POOLS: Record<MonsterTier, MonsterDefinition[]> = {
@@ -194,6 +297,8 @@ export class WaveManager {
   private readonly rng: Rng;
   /** Separate RNG stream for Broken Parts drops so adding/removing that roll never shifts monster-pick or loot-roll sequences elsewhere. */
   private readonly brokenPartsRng: Rng;
+  /** Likewise for affix rolls — an independent stream keeps existing seeded expectations stable. */
+  private readonly affixRng: Rng;
   private readonly metaBonuses: MetaBonuses;
   private readonly unlockedCompanionIds: Set<string>;
   private seed: number;
@@ -203,6 +308,10 @@ export class WaveManager {
   private pendingHeroHp = 0;
   /** Companion HP carried the same way, keyed by companion id. */
   private pendingCompanionHp = new Map<string, number>();
+  /** First companion of the pre-run squad; its leader skill applies party-wide while it lives. */
+  private leaderCompanionId: string | null = null;
+  /** Traits for the current Echo wave, or null on any normal wave. */
+  private echoTraits: MonsterTraits | null = null;
 
   constructor(
     heroDef: HeroDefinition,
@@ -210,10 +319,18 @@ export class WaveManager {
     metaBonuses: MetaBonuses = DEFAULT_META_BONUSES,
     startingEquipment: Partial<EquippedItems> = {},
     unlockedCompanionIds: Iterable<string> = allCompanions.map((c) => c.id),
+    /**
+     * Squad chosen before the run (see `SquadSelect`). The first id is the leader — its
+     * `leaderSkill` applies party-wide while it lives. Empty keeps the pre-squad behavior of
+     * discovering companions purely through loot, which is still a valid way to play: bringing
+     * fewer companions leaves roster slots open, so companion loot options keep appearing.
+     */
+    startingCompanionIds: string[] = [],
   ) {
     this.heroDef = heroDef;
     this.rng = new Rng(seed);
     this.brokenPartsRng = new Rng(seed + 90210);
+    this.affixRng = new Rng(seed + 13377);
     this.seed = seed;
     this.metaBonuses = metaBonuses;
     this.unlockedCompanionIds = new Set(unlockedCompanionIds);
@@ -222,9 +339,14 @@ export class WaveManager {
       heroProgress: { level: 1, xp: 0 },
       isGameOver: false,
       endReason: 'death',
+      killedBy: null,
       monsterTier: 'normal',
       monsterName: '',
       isEcho: false,
+      monsterAffix: null,
+      echoRecord: null,
+      monsterGroupSize: 1,
+      emptyCompanionSlots: MAX_ACTIVE_COMPANIONS,
       zoneId: '',
       zoneName: '',
       gold: 0,
@@ -238,7 +360,58 @@ export class WaveManager {
       lootOptions: [],
       hasUsedPhoenixRevive: false,
     };
+    this.state.companions = startingCompanionIds
+      .slice(0, this.squadCapacity())
+      .filter((id) => this.unlockedCompanionIds.has(id) && companionRegistry.tryGet(id) !== undefined)
+      .map((id) => ({ id, hp: companionRegistry.get(id).maxHp }));
+    this.leaderCompanionId = this.state.companions[0]?.id ?? null;
+    this.grantStartingRelics();
+
     this.engine = this.buildWaveEngine(1);
+  }
+
+  /**
+   * Prestige `Issued Kit`: seeds the run with random relics before wave one. Uses the main rng
+   * stream so a seeded run reproduces its opening hand, and only unique/stackable relics from the
+   * registry — no special-cased picks, so the grant benefits from every relic added later.
+   */
+  private grantStartingRelics(): void {
+    const count = Math.max(0, Math.round(this.metaBonuses.prestigeRules.startingRelics));
+    const pool = relicRegistry.all();
+    for (let i = 0; i < count && pool.length > 0; i++) {
+      const def = pool[Math.floor(this.rng.next() * pool.length)];
+      if (!def) continue;
+      const owned = this.state.ownedRelics.find((entry) => entry.id === def.id);
+      if (owned) {
+        if (def.stacking === 'stackable') owned.count += 1;
+      } else {
+        this.state.ownedRelics.push({ id: def.id, count: 1 });
+      }
+    }
+  }
+
+  /** Squad size limit, widened by the prestige `Fourth Chair` sigil. */
+  squadCapacity(): number {
+    return MAX_ACTIVE_COMPANIONS + Math.max(0, Math.round(this.metaBonuses.prestigeRules.extraSquadSlots));
+  }
+
+  /** The squad leader's id, or null when the run started with no chosen squad. */
+  getLeaderCompanionId(): string | null {
+    return this.leaderCompanionId;
+  }
+
+  /** Forwards a player-timed Brave Burst to the active fight. No-op unless the gauge is armed. */
+  triggerBurst(): WaveEvent[] {
+    if (this.state.isGameOver || this.state.isChoosingLoot) return [];
+    const events = this.engine.triggerBurst().map((event) => ({ type: 'combat', event }) as WaveEvent);
+
+    // A manual burst can end the fight outright, so it goes through the same wave-cleared path a
+    // normal killing blow would rather than waiting for the next tick to notice.
+    const combatEnd = this.engine.getState().isOver;
+    if (combatEnd && events.length > 0 && this.engine.getState().winnerId === this.heroDef.id) {
+      this.handleWaveCleared(events);
+    }
+    return events;
   }
 
   getRunState(): Readonly<RunState> {
@@ -263,6 +436,11 @@ export class WaveManager {
         this.handleWaveCleared(events);
       } else if (!this.tryPhoenixRevive(events)) {
         this.state.isGameOver = true;
+        this.state.killedBy = {
+          name: this.state.monsterName,
+          isEcho: this.state.isEcho,
+          echoRecord: this.state.echoRecord,
+        };
         events.push({ type: 'runOver', waveNumber: this.state.waveNumber });
       }
     }
@@ -284,7 +462,7 @@ export class WaveManager {
     const previousZoneId = this.state.zoneId;
     this.engine = this.buildWaveEngine(this.state.waveNumber + 1, this.pendingHeroHp);
 
-    const monster = this.engine.getState().monster;
+    const monster = primaryMonster(this.engine.getState()) ?? (this.engine.getState().monsters[0] as Combatant);
     events.push({
       type: 'waveStarted',
       waveNumber: this.state.waveNumber,
@@ -295,6 +473,9 @@ export class WaveManager {
         maxHp: monster.maxHp,
         attack: monster.attack,
         isEcho: this.state.isEcho,
+        element: monster.element,
+        affix: this.state.monsterAffix,
+        echoRecord: this.state.echoRecord,
       },
       zone: { id: this.state.zoneId, name: this.state.zoneName, isNewZone: this.state.zoneId !== previousZoneId },
     });
@@ -316,13 +497,20 @@ export class WaveManager {
   private handleWaveCleared(events: WaveEvent[]): void {
     const clearedWave = this.state.waveNumber;
     const modifiers = this.computeModifiers();
-    const xpGained = Math.round(this.currentMonsterDef().xpReward * (1 + modifiers.xpMultiplierSum));
+    // Every enemy in the wave pays out, so clearing a group is worth more than clearing a solo
+    // wave — otherwise a harder wave would reward the same as an easier one.
+    const baseXp = this.currentMonsterDefs().reduce((sum, def) => sum + def.xpReward, 0);
+    const xpGained = Math.round(baseXp * (1 + modifiers.xpMultiplierSum));
     events.push({ type: 'waveCleared', waveNumber: clearedWave, xpGained });
 
     const { progress, levelsGained } = applyXpGain(this.state.heroProgress, xpGained);
     this.state.heroProgress = progress;
     if (levelsGained > 0) {
       events.push({ type: 'levelUp', newLevel: progress.level });
+    }
+
+    if (this.state.isEcho) {
+      events.push({ type: 'echoDefeated', record: this.buildEchoRecord() });
     }
 
     const brokenPartsGained = rollBrokenParts(this.state.monsterTier, this.brokenPartsRng);
@@ -339,7 +527,8 @@ export class WaveManager {
       ownedRelicIds: this.ownedIdCountMap(this.state.ownedRelics),
       ownedCompanionIds: new Set(this.state.companions.map((c) => c.id)),
       unlockedCompanionIds: this.unlockedCompanionIds,
-      companionRosterFull: this.state.companions.length >= MAX_ACTIVE_COMPANIONS,
+      companionRosterFull: this.state.companions.length >= this.squadCapacity(),
+      extraOptions: this.metaBonuses.prestigeRules.extraLootOptions,
       ownedActiveSpellIds: new Set(this.state.activeSpells.map((s) => s.id)),
       activeSpellSlotsFull: this.state.activeSpells.length >= MAX_ACTIVE_SPELLS,
       ownedPassiveSpellIds: this.ownedIdCountMap(this.state.passiveSpells),
@@ -393,46 +582,136 @@ export class WaveManager {
     const maxHp = Math.round(levelStats.maxHp * (1 + modifiers.maxHpBonusPercentSum));
     const attackIntervalMs = Math.round(levelStats.attackIntervalMs / (1 + modifiers.attackSpeedMultiplierSum));
     const revivedHp = Math.max(1, Math.round(maxHp * PHOENIX_REVIVE_HP_FRACTION));
-    const hero = buildCombatant(this.heroDef.id, this.heroDef.name, revivedHp, maxHp, levelStats.attack, attackIntervalMs);
+    const hero = buildCombatant(this.heroDef.id, this.heroDef.name, revivedHp, maxHp, levelStats.attack, attackIntervalMs, this.heroDef.element);
 
-    const currentMonster = this.engine.getState().monster;
-    const monster = buildCombatant(
-      currentMonster.id,
-      currentMonster.name,
-      currentMonster.hp,
-      currentMonster.maxHp,
-      currentMonster.attack,
-      currentMonster.attackIntervalMs,
+    // Phoenix revive rebuilds the fight in place; every surviving enemy keeps its current HP.
+    const revivedMonsters = this.engine.getState().monsters.map((current) =>
+      buildCombatant(current.id, current.name, current.hp, current.maxHp, current.attack, current.attackIntervalMs, current.element),
     );
 
     const { allies, spellCasters } = this.buildAlliesAndSpells(modifiers);
 
     this.seed += 1;
-    this.engine = new CombatEngine(hero, monster, this.seed, modifiers, allies, spellCasters);
+    this.engine = new CombatEngine(
+      hero,
+      revivedMonsters,
+      this.seed,
+      modifiers,
+      allies,
+      spellCasters,
+      this.computeConditionals(),
+      this.runConditionContext(),
+      this.echoTraits ?? this.state.monsterAffix?.traits ?? {},
+      this.metaBonuses.prestigeRules.burstHeadStart,
+    );
     events.push({ type: 'revived' });
     return true;
   }
 
-  /** Re-derives the content definition for whichever monster the active CombatEngine is fighting. */
-  private currentMonsterDef(): MonsterDefinition {
-    const monster = this.engine.getState().monster;
-    if (monster.id === ECHO_ID) {
+  /**
+   * Chooses a past run to resurrect as this wave's Echo, or null to mirror the current build.
+   * Uses the main rng stream deliberately: which Echo you face is part of the run's shape, not a
+   * side roll, and a seeded run should reproduce it.
+   */
+  private pickLadderEcho(waveNumber: number): EchoRecord | null {
+    const ladder = this.metaBonuses.echoLadder;
+    if (ladder.length === 0 || waveNumber < ECHO_LADDER_MIN_WAVE) return null;
+    if (this.rng.next() >= ECHO_LADDER_CHANCE) return null;
+    const index = Math.min(ladder.length - 1, Math.floor(this.rng.next() * ladder.length));
+    return ladder[index] ?? null;
+  }
+
+  /**
+   * Decides how many enemies this wave spawns. Uses the affix stream rather than the main one so
+   * adding group waves does not shift the monster-pick or loot-roll sequences of existing seeds.
+   */
+  private rollGroupSize(waveNumber: number, tier: MonsterTier): number {
+    if (tier !== 'normal' || waveNumber < GROUP_MIN_WAVE) return 1;
+
+    const chance = Math.min(GROUP_MAX_CHANCE, GROUP_BASE_CHANCE + (waveNumber - GROUP_MIN_WAVE) * GROUP_CHANCE_PER_WAVE);
+    if (this.affixRng.next() >= chance) return 1;
+    return this.affixRng.next() < THIRD_ENEMY_CHANCE ? Math.min(MAX_GROUP_SIZE, 3) : 2;
+  }
+
+  /** Snapshots the build that just beat an Echo, as ratios against the mirror it faced. */
+  private buildEchoRecord(): EchoRecord {
+    const modifiers = this.computeModifiers();
+    const levelStats = statsForLevel(this.heroDef, this.state.heroProgress.level);
+    const maxHp = Math.round(levelStats.maxHp * (1 + modifiers.maxHpBonusPercentSum));
+    const attack = (levelStats.attack + modifiers.flatDamageBonusSum) * (1 + modifiers.damageMultiplierSum);
+    const monster = primaryMonster(this.engine.getState()) ?? (this.engine.getState().monsters[0] as Combatant);
+
+    // Ratios against the Echo that was actually fought, so a record replayed at a deeper wave
+    // still describes *how* that build fought rather than how big its numbers happened to be.
+    const mirrorAttack = Math.max(1, attack * ECHO_POWER_FRACTION);
+    const mirrorHp = Math.max(1, maxHp * ECHO_POWER_FRACTION);
+
+    return {
+      classId: this.heroDef.id,
+      className: this.heroDef.name,
+      element: this.heroDef.element,
+      wave: this.state.waveNumber,
+      level: this.state.heroProgress.level,
+      attackRatio: monster.maxHp > 0 ? monster.attack / mirrorAttack : 1,
+      hpRatio: monster.maxHp / mirrorHp,
+      attackIntervalMs: Math.round(levelStats.attackIntervalMs / (1 + modifiers.attackSpeedMultiplierSum)),
+      critChance: modifiers.critChanceSum,
+      critDamageMultiplier: modifiers.critDamageMultiplierSum,
+      lifestealPercent: modifiers.lifestealPercentSum,
+    };
+  }
+
+  /** Re-derives the content definitions for every enemy in the active wave. */
+  private currentMonsterDefs(): MonsterDefinition[] {
+    return this.engine.getState().monsters.map((monster) => this.monsterDefFor(monster));
+  }
+
+  /** Re-derives the content definition backing one live enemy. */
+  private monsterDefFor(monster: Combatant): MonsterDefinition {
+    if (monster.id.startsWith(ECHO_ID)) {
       // Not a bestiary entry — synthesize just enough of a definition to award tier-appropriate XP.
       return {
         id: ECHO_ID,
         name: monster.name,
         tier: this.state.monsterTier,
+        element: monster.element ?? 'light',
         maxHp: monster.maxHp,
         attack: monster.attack,
         attackIntervalMs: monster.attackIntervalMs,
         xpReward: ECHO_XP_REWARD_BY_TIER[this.state.monsterTier],
       };
     }
-    const found = allMonsters.find((m) => m.id === monster.id);
+    // Group members carry a `#n` suffix so each has a unique combat id; the bestiary key is the
+    // part before it.
+    const defId = monster.id.split('#')[0] as string;
+    const found = allMonsters.find((m) => m.id === defId);
     if (!found) {
       throw new Error(`Unknown monster id in active combat: ${monster.id}`);
     }
     return found;
+  }
+
+  /**
+   * Conditionals currently come from relics alone. Equipment/talents/class stay purely additive on
+   * purpose: the combo layer is worth much more when a bounded, curated set of sources feeds it —
+   * spreading it across every content type would put the product term on almost every run and turn
+   * an interaction into a baseline.
+   */
+  private computeConditionals(): ConditionalModifier[] {
+    return collectConditionals(
+      this.state.ownedRelics.map((owned) => ({ conditionals: relicRegistry.get(owned.id).conditionals, count: owned.count })),
+    );
+  }
+
+  /** Per-wave snapshot of run-level facts the conditional predicates read. */
+  private runConditionContext(): RunConditionContext {
+    return {
+      relicCount: this.state.ownedRelics.length,
+      wavesCleared: Math.max(0, this.state.waveNumber - 1),
+      squadElements: this.state.companions
+        .filter((owned) => owned.hp > 0)
+        .map((owned) => companionRegistry.get(owned.id).element),
+    };
   }
 
   private ownedIdCountMap(owned: { id: string; count: number }[]): Map<string, number> {
@@ -471,6 +750,22 @@ export class WaveManager {
       .filter((def) => def.role === 'support' && def.auraModifier)
       .map((def) => ({ modifiers: [def.auraModifier as RelicModifier], count: 1 }));
 
+    const leader = this.leaderCompanionId
+      ? this.state.companions.find((owned) => owned.id === this.leaderCompanionId && owned.hp > 0)
+      : undefined;
+    const leaderSkill = leader ? companionRegistry.get(leader.id).leaderSkill : undefined;
+    const leaderSources: ModifierSource[] = leaderSkill ? [{ modifiers: leaderSkill.modifiers, count: 1 }] : [];
+
+    // Counts living companions, so a party wiped mid-run ramps the hero up as it happens rather
+    // than only at squad-selection time.
+    const livingCompanions = this.state.companions.filter((owned) => owned.hp > 0).length;
+    // Measured against the *current* capacity: with a fourth slot unlocked, a three-companion
+    // squad is genuinely understrength and should be compensated as such.
+    const capacity = this.squadCapacity();
+    const solitudeModifiers = resolveSolitudeModifiers(livingCompanions, capacity);
+    this.state.emptyCompanionSlots = capacity - livingCompanions;
+    const solitudeSources: ModifierSource[] = solitudeModifiers.length > 0 ? [{ modifiers: solitudeModifiers, count: 1 }] : [];
+
     const brokenBladeSources: ModifierSource[] = this.state.ownedRelics.some((owned) => owned.id === BROKEN_BLADE_ID)
       ? [
           {
@@ -485,6 +780,8 @@ export class WaveManager {
       ...equipmentSources,
       ...passiveSpellSources,
       ...companionAuraSources,
+      ...leaderSources,
+      ...solitudeSources,
       ...brokenBladeSources,
       talentSource,
       classSource,
@@ -519,7 +816,7 @@ export class WaveManager {
       const levelBonus = 1 + (this.state.heroProgress.level - 1) * COMPANION_LEVEL_SCALING_PER_LEVEL;
       const outputBonus = rankBonus * levelBonus;
       const upgradedAttack = Math.round(def.attack * outputBonus);
-      const combatant = buildCombatant(def.id, def.name, finalHp, scaledMaxHp, upgradedAttack, scaledIntervalMs);
+      const combatant = buildCombatant(def.id, def.name, finalHp, scaledMaxHp, upgradedAttack, scaledIntervalMs, def.element);
       allies.push({
         combatant,
         role: def.role,
@@ -557,22 +854,78 @@ export class WaveManager {
     const maxHp = Math.round(levelStats.maxHp * (1 + modifiers.maxHpBonusPercentSum));
     const attackIntervalMs = Math.round(levelStats.attackIntervalMs / (1 + modifiers.attackSpeedMultiplierSum));
 
-    this.state.isEcho = waveNumber > 0 && waveNumber % ECHO_WAVE_INTERVAL === 0;
+    const echoInterval = Math.max(5, ECHO_WAVE_INTERVAL - Math.max(0, Math.round(this.metaBonuses.prestigeRules.echoCadenceReduction)));
+    this.state.isEcho = waveNumber > 0 && waveNumber % echoInterval === 0;
 
-    let monster;
+    let monsters: Combatant[];
     if (this.state.isEcho) {
-      const echoAttack = Math.max(1, Math.round((levelStats.attack + modifiers.flatDamageBonusSum) * (1 + modifiers.damageMultiplierSum) * ECHO_POWER_FRACTION));
-      const echoMaxHp = Math.max(1, Math.round(maxHp * ECHO_POWER_FRACTION));
-      const echoName = `Echo of ${this.heroDef.name}`;
+      // The live mirror: what the hero itself fights with this wave, at ECHO_POWER_FRACTION.
+      const mirrorAttack = Math.max(1, Math.round((levelStats.attack + modifiers.flatDamageBonusSum) * (1 + modifiers.damageMultiplierSum) * ECHO_POWER_FRACTION));
+      const mirrorMaxHp = Math.max(1, Math.round(maxHp * ECHO_POWER_FRACTION));
+
+      const record = this.pickLadderEcho(waveNumber);
+      this.state.echoRecord = record;
+
+      const echoAttack = record ? Math.max(1, Math.round(mirrorAttack * record.attackRatio)) : mirrorAttack;
+      const echoMaxHp = record ? Math.max(1, Math.round(mirrorMaxHp * record.hpRatio)) : mirrorMaxHp;
+      const echoInterval = record ? record.attackIntervalMs : attackIntervalMs;
+      const echoElement = record ? record.element : this.heroDef.element;
+      const echoName = record ? `Echo of ${record.className}, wave ${record.wave}` : `Echo of ${this.heroDef.name}`;
+
       this.state.monsterName = echoName;
-      monster = buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, attackIntervalMs);
+      this.state.monsterElement = echoElement;
+      // The Echo deliberately never rolls an affix: its whole premise is being an exact readout of
+      // a build, and a bolted-on modifier would break that reading.
+      this.state.monsterAffix = null;
+      // The Echo now fights with the hero's own crit and lifesteal profile, not just raw numbers.
+      // It routes through MonsterTraits rather than the party modifier pipeline, so the Phase 3
+      // boundary holds — the mirror gets its own copy of the numbers, not a shared reference.
+      this.state.monsterGroupSize = 1;
+      this.echoTraits = {
+        critChance: (record ? record.critChance : modifiers.critChanceSum) * ECHO_POWER_FRACTION,
+        critDamageMultiplier: record ? record.critDamageMultiplier : modifiers.critDamageMultiplierSum,
+        lifestealPercent: (record ? record.lifestealPercent : modifiers.lifestealPercentSum) * ECHO_POWER_FRACTION,
+      };
+      monsters = [buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, echoInterval, echoElement)];
     } else {
+      this.state.echoRecord = null;
+      this.echoTraits = null;
       const tierPool = TIER_POOLS[tier];
       const pool = monsterPoolForWave(waveNumber, tierPool);
       const def = pickFrom(pool, this.rng);
       this.state.monsterName = def.name;
+      this.state.monsterElement = def.element;
+      const affix = rollWaveAffix(waveNumber, tier, this.affixRng);
+      this.state.monsterAffix = affix;
+
+      const groupSize = this.rollGroupSize(waveNumber, tier);
+      const statScale = GROUP_STAT_SCALE[groupSize] ?? 1;
       const scaled = scaledMonsterStats(def, waveNumber);
-      monster = buildCombatant(def.id, def.name, scaled.maxHp, scaled.maxHp, scaled.attack, def.attackIntervalMs);
+
+      const affixedHp = Math.max(1, Math.round(scaled.maxHp * (affix?.hpMultiplier ?? 1) * statScale));
+      const affixedAttack = Math.max(1, Math.round(scaled.attack * (affix?.attackMultiplier ?? 1) * statScale));
+      const affixedInterval = Math.max(120, Math.round(def.attackIntervalMs * (affix?.attackIntervalMultiplier ?? 1)));
+
+      const baseName = affix ? `${affix.name} ${def.name}` : def.name;
+      this.state.monsterName = groupSize > 1 ? `${baseName} x${groupSize}` : baseName;
+      this.state.monsterGroupSize = groupSize;
+
+      monsters = Array.from({ length: groupSize }, (_, index) =>
+        buildCombatant(
+          // Each group member needs a unique combat id (the renderer and the event stream key off
+          // it); `monsterDefFor` strips the suffix back off to find the bestiary entry.
+          groupSize > 1 ? `${def.id}#${index}` : def.id,
+          baseName,
+          affixedHp,
+          affixedHp,
+          affixedAttack,
+          // Stagger the pack's opening swings so three enemies don't land as one simultaneous
+          // spike on the first exchange.
+          affixedInterval,
+          def.element,
+          index * Math.round(affixedInterval / Math.max(1, groupSize)),
+        ),
+      );
     }
 
     let heroHp = maxHp;
@@ -582,10 +935,21 @@ export class WaveManager {
       heroHp = Math.min(maxHp, beforeHeal + Math.round((maxHp - beforeHeal) * healFraction));
     }
 
-    const hero = buildCombatant(this.heroDef.id, this.heroDef.name, heroHp, maxHp, levelStats.attack, attackIntervalMs);
+    const hero = buildCombatant(this.heroDef.id, this.heroDef.name, heroHp, maxHp, levelStats.attack, attackIntervalMs, this.heroDef.element);
     const { allies, spellCasters } = this.buildAlliesAndSpells(modifiers);
 
     this.seed += 1;
-    return new CombatEngine(hero, monster, this.seed, modifiers, allies, spellCasters);
+    return new CombatEngine(
+      hero,
+      monsters,
+      this.seed,
+      modifiers,
+      allies,
+      spellCasters,
+      this.computeConditionals(),
+      this.runConditionContext(),
+      this.echoTraits ?? this.state.monsterAffix?.traits ?? {},
+      this.metaBonuses.prestigeRules.burstHeadStart,
+    );
   }
 }

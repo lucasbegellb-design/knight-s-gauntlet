@@ -4,11 +4,45 @@ Idle-RPG roguelike (Balatro-style relic combos + Enter the Gungeon-style loot ra
 
 ## Branch
 
-Work happens on `claude/knights-gauntlet-idle-rpg-0aiorv`. Push there, not `main`.
+Work happens on `claude/game-improvement-plan-a3e41j`. Push there, not `main`.
+
+## Major update (this session) — read `ROADMAP.md` and `LORE.md` first
+
+The 8-phase build is done; a second, larger pass reworked the game's *design*
+rather than its content count. Six chantiers, each committed separately:
+
+1. **Elemental affinity** (`src/engine/elements.ts`) — Brave Frontier's six-element
+   wheel, the only multiplicative term applied before the modifier pipeline. All 19
+   monsters / 11 companions / 4 classes tagged. Multipliers are 1.35/0.75, not BF's
+   1.5/0.5 — measured, see the module comment.
+2. **Conditional/multiplicative modifiers** (`src/engine/conditionals.ts`) — the combo
+   layer. `ModifierCondition` predicates + `damageMultiplier` that composes as a
+   *product* across relics. `comboPack.ts` has 15 relics authored for it. The flat
+   `${kind}Sum` pipeline is untouched and still carries every older relic.
+3. **Squad + leader skills + Brave Burst** — pre-run squad selection (`SquadSelect.tsx`),
+   a party-wide leader skill, and a party gauge that arms rather than fires, giving the
+   idle loop its one optional player input.
+4. **Monster traits + wave affixes** (`src/data/affixes.ts`, `src/engine/affixes.ts`) —
+   8 rolled prefixes and a monster-owned trait vocabulary. Deliberately *not* routed
+   through `AggregatedModifiers`; the Phase 3 boundary still holds.
+5. **Echo ladder** — beating an Echo records the build; past wave 30 those records come
+   back as Echoes. The Echo now also fights with the hero's crit/lifesteal profile, via
+   the traits channel.
+6. **Audio + feel + perf** — `src/audio/sfx.ts` synthesises every sound with Web Audio
+   (no assets). Phaser is dynamically imported (initial payload ~1.7MB → ~330KB) and the
+   HUD snapshot is throttled to 66ms instead of running every frame.
+
+Plus **the voice pass**: `LORE.md` is the single cosmology everything now hangs off
+(classes are devotions to one of six Ardeurs), relics and monsters carry a `flavor`
+field kept strictly separate from mechanical `description`, and `src/data/voice.test.ts`
+guards the writing rules.
+
+`CONTRIBUTING_AGENT.md` documents the token/resource protocol used to do all this —
+follow it.
 
 ## Stack
 
-Vite + React + TS (HUD/HUB/menus, Cinzel+Manrope fonts via Google Fonts, dark/gold/arcane-purple **gilded-chrome** theme in `src/index.css` — ornate gold-bevel panel borders, corner gem accents, gradient-underlined section titles, a segmented tab strip, and sheen-highlighted buttons, all CSS-only, no new art) · Phaser 4 (`CombatScene`, real sprites + tween-based hit/death/spawn animations) · Zustand (`runStore` per-run, `metaStore` persistent, kept strictly separate) · `idb-keyval` (meta persistence) · Vitest (engine logic only, 136 tests, including a committed `balanceSim.test.ts` harness — see Known gaps).
+Vite + React + TS (HUD/HUB/menus, Cinzel+Manrope fonts via Google Fonts, dark/gold/arcane-purple **gilded-chrome** theme in `src/index.css` — ornate gold-bevel panel borders, corner gem accents, gradient-underlined section titles, a segmented tab strip, and sheen-highlighted buttons, all CSS-only, no new art) · Phaser 4 (`CombatScene`, real sprites + tween-based hit/death/spawn animations) · Zustand (`runStore` per-run, `metaStore` persistent, kept strictly separate) · `idb-keyval` (meta persistence) · Vitest (engine logic only, **206 tests**, including a `balanceSim.test.ts` harness that now runs per class and compares solo vs. led-squad runs, printing its numbers on every run).
 
 ## Commands
 
@@ -62,8 +96,35 @@ Brave-Frontier-style character summon, layered on top of the existing companion 
 
 Fixed. Single canonical workflow: `.github/workflows/main.yml` (do not re-add `static.yml` or a second Pages workflow — a prior session had 3 competing ones racing each other, which was the original blank-page bug). `vite.config.ts` uses `base: '/knight-s-gauntlet/'` (this exact repo name — don't change unless the repo is renamed). Runtime `game-assets/...` image paths in `src/ui/RarityIcon.tsx` are intentionally relative (no leading `/`) since literal strings ignore Vite's `base` config.
 
+**The trap that cost a whole session's deploys:** the workflow's `on.push.branches` list is
+explicit, and this repo's **default branch is `claude/knights-gauntlet-idle-rpg-0aiorv`** — there
+is no `main`, despite the name looking like a feature branch. When you start work on a new
+`claude/*` branch you must **add** it to that list. Miss it and every push succeeds, no failure is
+reported anywhere (the workflow simply never runs), and the live site silently stays on whatever
+the default branch last built. **Add, never swap** — removing the default branch breaks publishing
+the moment the pull request merges. Remove your development branch from the list once it is merged.
+The deploy is also gated behind `npm run lint` and `npm test` so a red build cannot publish.
+
+## Balance state (measured, `npx vitest run src/engine/balanceSim.test.ts`)
+
+Naive always-pick-option-0 strategy, 100 seeds per class. Solo: 52-64/100 survivors past
+wave 10, median death wave 13-20 (group waves cost a few points). With a led starter squad: 100/100 past wave 10, median
+death wave 25-40. A **wave-20 wall** where every class and build died was fixed by giving
+each monster tier its own per-wave growth coefficient (`TIER_SCALING` in `waveScaling.ts`)
+— `normal` keeps the original 0.10/0.06 so the tuned early game is bit-for-bit unchanged.
+
 ## Known gaps / natural next steps
 
+0. **No art for anything added this session** — affixes, elements, the Brave Burst and the
+   Echo ladder are all communicated through CSS badges and floating text. The asset
+   pipeline (`scripts/asset-gen/`) is untouched and still works; element icons and affix
+   frames are the obvious next generation batch.
+0b. **Multi-enemy waves were scoped out.** `CombatState.monster` is still singular. It is
+   the one part of chantier 4 that needs a real engine refactor rather than an additive
+   change, and it is the largest remaining gameplay gap.
+0c. Elemental multipliers are deliberately soft (1.35/0.75) because the hero's element is
+   locked for a whole run. Now that squad selection exists, pushing back toward BF's
+   1.5/0.5 is worth re-measuring.
 1. A faint shadow-blob remnant on 1-2 monster sprites (e.g. wolf) — see the background-removal writeup above.
 2. Deeper balance pass — a real, committed simulation harness now exists (`src/engine/balanceSim.test.ts`, run standalone via `npx vitest run src/engine/balanceSim.test.ts`; the "100 seeded runs, naive option-0" result cited in earlier revisions of this file was, on inspection, never actually committed anywhere — prose only). Current baseline with the relic↔companion synergy + Broken Blade + roster expansion in place: **49/100 survivors past wave 10**, in line with the previously-documented ~50/100 — the harness has a soft regression floor (`survivors >= 40/100`) so future changes get an automatic guard rail. Still worth a pass with a smarter simulated strategy (or real playtesting) rather than trusting "pick option 0" as a difficulty ceiling; class stat multipliers/innate modifiers, the Forge Weapon's per-level bonus, and the gacha pull-cost/rate curve remain first-pass, not exhaustively tuned.
 3. Gacha-premium visual polish (animated pulls, more particle/glow work) — the reveal overlay reuses the loot-card mythic/legendary shimmer but has no dedicated summon-circle/beam animation of its own yet.
@@ -72,5 +133,16 @@ Fixed. Single canonical workflow: `.github/workflows/main.yml` (do not re-add `s
 6. ~~Still single static images, not true animated sprite sheets~~ — partially fixed: every hero/monster/companion now has a second **attack frame** (34/34, txt2img — see Assets section), swapped in during the existing lunge choreography. Still only 2 frames (idle + attack), no hurt/death frames — a true multi-frame sheet remains future work, deliberately scoped out this pass (100+ generations was judged infeasible in one session).
 7. ~~The gacha "pity" concept doesn't exist~~ — fixed: see Gacha section below (`GachaPityState`, `RARE_PITY_THRESHOLD`/`LEGENDARY_PITY_THRESHOLD`).
 8. ~~Companion base stats never rebalanced~~ — partially fixed: `WaveManager.buildAlliesAndSpells` now scales companion attack/heal output by the hero's own level (`COMPANION_LEVEL_SCALING_PER_LEVEL`, +5%/level), the same axis the hero's own attack already grows on, so companions no longer fall behind the wave-scaling curve over a long run purely from being flat. `maxHp` deliberately still isn't level-scaled (would break the wave-clear-heal-fraction bookkeeping — see the code comment). The raw base numbers in `src/data/companions/*.ts` themselves were left untouched — they're reasonably tuned in isolation at wave 1 by rarity/role, the actual problem was the missing growth curve, not the starting values.
-9. General "content feels thin after a few sessions" feedback — Ascension addresses one specific instance (Gacha going stale post-unlock) but the broader concern (a long-term progression goal beyond repeating the same systems) is still open; a prestige/rebirth layer was floated as one option, not yet scoped or built.
+9. ~~No long-term goal beyond repeating the same systems; a prestige layer was floated but never
+   scoped~~ — **built.** `src/engine/prestige.ts` + `src/data/prestige.ts` + `PrestigeTab`. Sealing
+   a record resets everything bought with essence (talents, Forge, Forge Weapon, Kingdom, companion
+   ranks, currency) and keeps everything *collected* (gacha roster, ascension, Grimoire, Hall of
+   Echoes) — taking back a collection is what makes prestige read as punishment. Sigils are paid on
+   **deepest wave reached**, never on currency held, so the reward is for playing rather than
+   idling. The hard rule: **a Sigil buys a rule change, never a bigger number** — extra loot options,
+   a fourth squad slot, a pre-charged Brave Burst, a shorter Echo cadence, an opening hand of
+   relics, carried gold. `prestige.test.ts` fails if anyone adds a stat bonus to the catalogue.
+   `PrestigeRules` is deliberately a plain value object rather than another `RelicModifier[]`:
+   these are the rules a run is assembled from, not entries in the stat pipeline.
+9b. General "content feels thin after a few sessions" feedback — Ascension addresses one specific instance (Gacha going stale post-unlock) but the broader concern (a long-term progression goal beyond repeating the same systems) is still open; a prestige/rebirth layer was floated as one option, not yet scoped or built.
 10. ~~Kingdom territories/lords have no dedicated art~~ — fixed: territories/lords now have generated art (see Assets section).

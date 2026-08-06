@@ -3,9 +3,26 @@ import { RARITY_COLOR, RARITY_LABEL, type Rarity } from '../data/rarity';
 import type { LootOption } from '../engine/loot';
 import { RarityIcon } from './RarityIcon';
 
-function describeOption(option: LootOption): { name: string; description: string; rarity: Rarity; kindLabel: string } {
+/**
+ * Mechanical text and voice are kept in separate fields (see LORE.md's writing rules) precisely so
+ * the card can show both without the player ever having to work out which one is telling them what
+ * the thing does.
+ */
+function describeOption(option: LootOption): {
+  name: string;
+  description: string;
+  flavor?: string;
+  rarity: Rarity;
+  kindLabel: string;
+} {
   if (option.kind === 'relic') {
-    return { name: option.relic.name, description: option.relic.description, rarity: option.rarity, kindLabel: 'Relic' };
+    return {
+      name: option.relic.name,
+      description: option.relic.description,
+      flavor: option.relic.flavor,
+      rarity: option.rarity,
+      kindLabel: 'Relic',
+    };
   }
   if (option.kind === 'equipment') {
     return {
@@ -20,6 +37,7 @@ function describeOption(option: LootOption): { name: string; description: string
       name: option.companion.name,
       description: option.companion.description,
       rarity: option.rarity,
+      flavor: option.companion.leaderSkill ? `★ ${option.companion.leaderSkill.name} — ${option.companion.leaderSkill.description}` : undefined,
       kindLabel: `Companion (${option.companion.role})`,
     };
   }
@@ -63,6 +81,7 @@ export function LootPopup() {
               <div className="loot-card-kind">{info.kindLabel}</div>
               <div className="loot-card-name">{info.name}</div>
               <div className="loot-card-description">{info.description}</div>
+              {info.flavor && <div className="loot-card-flavor">{info.flavor}</div>}
             </button>
           );
         })}

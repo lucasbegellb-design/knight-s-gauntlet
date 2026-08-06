@@ -3,6 +3,7 @@ import { GameOverOverlay, Hud } from './ui/Hud';
 import { LootPopup } from './ui/LootPopup';
 import { Hub } from './ui/Hub';
 import { ClassSelect } from './ui/ClassSelect';
+import { SquadSelect } from './ui/SquadSelect';
 import { useMetaStore } from './store/metaStore';
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
       <div className="screen-fade" key={screen}>
         {screen === 'hub' && <Hub />}
         {screen === 'classSelect' && <ClassSelect />}
+        {screen === 'squadSelect' && <SquadSelect />}
         {screen === 'run' && (
           <>
             <Hud />

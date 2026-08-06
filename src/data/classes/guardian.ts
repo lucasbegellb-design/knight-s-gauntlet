@@ -2,10 +2,11 @@ import type { ClassDefinition } from '../class.types';
 
 export const guardianClass: ClassDefinition = {
   id: 'guardian',
+  element: 'earth',
   name: 'Guardian',
-  description: 'Slow and hits soft, but shrugs off hits and punishes attackers who get close.',
+  description: "Devoted to Obstinacy. You do not get past. People have tried. They did not get past. Slow, heavy, and still standing.",
   statMultiplier: { maxHp: 1.4, attack: 0.82, attackIntervalMs: 1.15 },
-  innateModifiers: [{ kind: 'reflectDamagePercent', value: 0.05 }],
+  innateModifiers: [{ kind: 'reflectDamagePercent', value: 0.2 }],
   weaponPool: ['knights_blade', 'stormblade'],
   /** Neutral — a distinct hero sprite per class carries visual identity now, not a color wash; kept as the graceful-fallback tint if this class's art is ever missing. */
   tint: 0xffffff,

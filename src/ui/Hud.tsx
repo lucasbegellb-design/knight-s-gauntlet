@@ -1,4 +1,7 @@
 import { useRunStore, type CombatSpeed } from '../store/runStore';
+import { AffinityCallout, ElementBadge } from './ElementBadge';
+import { resumeAudio } from '../audio/sfx';
+import { SOLITUDE_PER_EMPTY_SLOT } from '../engine/solitude';
 import { useMetaStore } from '../store/metaStore';
 import { RARITY_COLOR } from '../data/rarity';
 import type { MonsterTier } from '../data/monster.types';
@@ -55,6 +58,83 @@ function Bar({ value, max, color }: { value: number; max: number; color: string 
   );
 }
 
+/**
+ * The party Brave Burst gauge — and the only input the combat loop has.
+ *
+ * While charging it is a passive readout. Once armed it becomes a button with a short window:
+ * hitting it fires the squad-wide burst at bonus power, ignoring it lets the engine auto-fire at
+ * base power a moment later. Nothing is lost by never touching it, which is the point — an idle
+ * game earns its one interaction only if declining it is still a complete way to play.
+ */
+/**
+ * The Solitary Trial readout. An unexplained stat bonus is worse than no bonus — the player has to
+ * be able to connect "I went in short-handed" to "I hit harder", or the balance pass reads as the
+ * numbers being arbitrary.
+ */
+function SolitaryTrialBadge() {
+  const emptySlots = useRunStore((s) => s.emptyCompanionSlots);
+  if (emptySlots <= 0) return null;
+
+  const percent = Math.round((SOLITUDE_PER_EMPTY_SLOT.damageMultiplier as number) * emptySlots * 100);
+  return (
+    <span
+      className="solitude-badge"
+      title={`The Gauntlet calibrates to the squad that walked in. ${emptySlots} empty slot${emptySlots > 1 ? 's' : ''}: roughly +${percent}% damage, plus attack speed, max HP and lifesteal.`}
+    >
+      ⚔ Solitary Trial ×{emptySlots}
+    </span>
+  );
+}
+
+function MuteButton() {
+  const audioMuted = useMetaStore((s) => s.audioMuted);
+  const toggleAudioMuted = useMetaStore((s) => s.toggleAudioMuted);
+  return (
+    <button
+      type="button"
+      className="speed-button"
+      title={audioMuted ? 'Unmute' : 'Mute'}
+      onClick={() => {
+        resumeAudio();
+        toggleAudioMuted();
+      }}
+    >
+      {audioMuted ? '🔇' : '🔊'}
+    </button>
+  );
+}
+
+function BraveBurstBar() {
+  const gauge = useRunStore((s) => s.burstGauge);
+  const armed = useRunStore((s) => s.burstArmed);
+  const requestBurst = useRunStore((s) => s.requestBurst);
+  const isGameOver = useRunStore((s) => s.isGameOver);
+
+  if (isGameOver) return null;
+
+  return (
+    <div className={`burst-row ${armed ? 'burst-row-armed' : ''}`}>
+      <span className="burst-label">Brave Burst</span>
+      <div className="burst-track">
+        <div className="burst-fill" style={{ width: `${Math.min(1, gauge) * 100}%` }} />
+      </div>
+      <button
+        type="button"
+        className="burst-button"
+        disabled={!armed}
+        onClick={() => {
+          // Browsers refuse to start an AudioContext without a user gesture; the burst button is
+          // the most-pressed control in the game, so it doubles as the unlock.
+          resumeAudio();
+          requestBurst();
+        }}
+      >
+        {armed ? 'UNLEASH ×1.5' : `${Math.round(Math.min(1, gauge) * 100)}%`}
+      </button>
+    </div>
+  );
+}
+
 export function Hud() {
   const state = useRunStore();
 
@@ -67,7 +147,7 @@ export function Hud() {
           </div>
           {state.isEcho ? (
             <div className="tier-badge tier-badge-echo" style={{ color: '#b39dff' }}>
-              ECHO
+              {state.echoRecord ? `ECHO · WAVE ${state.echoRecord.wave}` : 'ECHO'}
             </div>
           ) : (
             state.monsterTier !== 'normal' && (
@@ -79,7 +159,29 @@ export function Hud() {
               </div>
             )
           )}
-          <div className="hud-sublabel">{state.monsterName}</div>
+          {state.monsterAffix && (
+            <div
+              className="affix-badge"
+              style={{ color: state.monsterAffix.color, borderColor: `${state.monsterAffix.color}66`, background: `${state.monsterAffix.color}14` }}
+              title={state.monsterAffix.description}
+            >
+              {state.monsterAffix.name.toUpperCase()}
+            </div>
+          )}
+          {state.monsterCount > 1 && (
+            <div className="pack-badge" title={`${state.monstersRemaining} of ${state.monsterCount} still standing`}>
+              {Array.from({ length: state.monsterCount }, (_, i) => (
+                <span key={i} className={`pack-pip ${i < state.monstersRemaining ? 'pack-pip-alive' : ''}`} />
+              ))}
+              <span className="pack-badge-label">
+                {state.monstersRemaining}/{state.monsterCount}
+              </span>
+            </div>
+          )}
+          <div className="hud-sublabel">
+            {state.monsterName} <ElementBadge element={state.monsterElement} compact />
+            <AffinityCallout attacker={state.heroElement} defender={state.monsterElement} />
+          </div>
           <Bar value={state.monsterHp} max={state.monsterMaxHp} color="#e74c3c" />
           <div className="hud-value">
             {formatNumber(state.monsterHp)}/{formatNumber(state.monsterMaxHp)}
@@ -88,7 +190,10 @@ export function Hud() {
 
         <div className="hud-panel">
           <div className="hud-label">Level {state.heroLevel}</div>
-          <div className="hud-sublabel">{state.heroClassName}</div>
+          <div className="hud-sublabel">
+            {state.heroClassName} <ElementBadge element={state.heroElement} compact />
+            <AffinityCallout attacker={state.monsterElement} defender={state.heroElement} />
+          </div>
           <Bar value={state.heroHp} max={state.heroMaxHp} color="#2ecc71" />
           <div className="hud-value">
             {formatNumber(state.heroHp)}/{formatNumber(state.heroMaxHp)} HP
@@ -99,6 +204,8 @@ export function Hud() {
           </div>
         </div>
       </div>
+
+      <BraveBurstBar />
 
       <div className="hud-row">
         <span className="hud-sublabel">Speed</span>
@@ -112,6 +219,8 @@ export function Hud() {
             x{speed}
           </button>
         ))}
+        <MuteButton />
+        <SolitaryTrialBadge />
         {state.brokenParts > 0 && <span className="hud-sublabel">⚙️ {state.brokenParts} broken parts</span>}
         <span className="gold-display">🪙 {state.gold} gold</span>
         <button
@@ -192,9 +301,18 @@ export function GameOverOverlay() {
   const isGameOver = useRunStore((state) => state.isGameOver);
   const endReason = useRunStore((state) => state.endReason);
   const waveNumber = useRunStore((state) => state.waveNumber);
+  const killedBy = useRunStore((state) => state.killedBy);
   const setScreen = useMetaStore((state) => state.setScreen);
 
   if (!isGameOver) return null;
+
+  // Being killed by an Echo is the game's one genuinely personal defeat, so it gets its own line
+  // rather than being folded into the generic "fell on wave N".
+  const echoEpitaph = killedBy?.isEcho
+    ? killedBy.echoRecord
+      ? `You were killed by yourself — the ${killedBy.echoRecord.className} you ran to wave ${killedBy.echoRecord.wave}.`
+      : 'You were killed by yourself. The build was the problem.'
+    : null;
 
   return (
     <div className="game-over-overlay">
@@ -202,6 +320,11 @@ export function GameOverOverlay() {
       <div className="game-over-subtitle">
         {endReason === 'abandoned' ? `Retreated on wave ${waveNumber}` : `Fell on wave ${waveNumber}`}
       </div>
+      {echoEpitaph ? (
+        <div className="game-over-echo">{echoEpitaph}</div>
+      ) : (
+        killedBy && <div className="game-over-killer">Killed by {killedBy.name}</div>
+      )}
       <button type="button" className="restart-button" onClick={() => setScreen('hub')}>
         Return to Camp
       </button>

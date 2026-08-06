@@ -9,6 +9,7 @@ export const vitalityPackRelics: RelicDefinition[] = [
     tags: ['vitality'],
     stacking: 'stackable',
     description: 'Increases maximum health.',
+    flavor: "Survived the thing it was meant to protect.",
     modifiers: [{ kind: 'maxHpBonusPercent', value: 0.05 }],
   },
   {
@@ -18,6 +19,7 @@ export const vitalityPackRelics: RelicDefinition[] = [
     tags: ['vitality'],
     stacking: 'stackable',
     description: 'Increases maximum health.',
+    flavor: "Previous owner had no further use for it.",
     modifiers: [{ kind: 'maxHpBonusPercent', value: 0.05 }],
   },
   {
@@ -27,6 +29,7 @@ export const vitalityPackRelics: RelicDefinition[] = [
     tags: ['vitality'],
     stacking: 'stackable',
     description: 'Recover more health when clearing a wave.',
+    flavor: "Grows only in the Bonefields. Nobody asks what it grows on.",
     modifiers: [{ kind: 'regenPerWave', value: 0.05 }],
   },
   {
@@ -36,6 +39,7 @@ export const vitalityPackRelics: RelicDefinition[] = [
     tags: ['vitality'],
     stacking: 'stackable',
     description: 'Increases maximum health and reflects a portion of damage taken.',
+    flavor: "Issued to the front rank. The front rank was not consulted.",
     modifiers: [
       { kind: 'maxHpBonusPercent', value: 0.08 },
       { kind: 'reflectDamagePercent', value: 0.03 },
@@ -48,6 +52,7 @@ export const vitalityPackRelics: RelicDefinition[] = [
     tags: ['vitality'],
     stacking: 'stackable',
     description: 'Recover much more health when clearing a wave.',
+    flavor: "Opens when you are hurt. Closes when you are not. Rude.",
     modifiers: [{ kind: 'regenPerWave', value: 0.08 }],
   },
   {
@@ -57,6 +62,7 @@ export const vitalityPackRelics: RelicDefinition[] = [
     tags: ['vitality'],
     stacking: 'unique',
     description: 'Greatly increases maximum health.',
+    flavor: "A wall, condensed, and slightly resentful about it.",
     modifiers: [{ kind: 'maxHpBonusPercent', value: 0.15 }],
   },
   {
@@ -66,6 +72,7 @@ export const vitalityPackRelics: RelicDefinition[] = [
     tags: ['vitality'],
     stacking: 'unique',
     description: 'Massively increases maximum health and health recovered per wave.',
+    flavor: "Not a promise to survive. A refusal to discuss it.",
     modifiers: [
       { kind: 'maxHpBonusPercent', value: 0.3 },
       { kind: 'regenPerWave', value: 0.15 },
