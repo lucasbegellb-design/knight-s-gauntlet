@@ -1544,3 +1544,53 @@ body {
   font-weight: 700;
   letter-spacing: 0.05em;
 }
+
+/* ---- Hall of Echoes (ui/EchoesTab.tsx) ---- */
+.echo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 3px solid #b39dff;
+  border-radius: 8px;
+  background: rgba(179, 157, 255, 0.05);
+}
+.echo-row-body { flex: 1; min-width: 0; }
+.echo-rank {
+  min-width: 1.9rem;
+  color: #8f8f8f;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: right;
+}
+.echo-wave {
+  margin-left: 0.4rem;
+  color: #b39dff;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.echo-empty {
+  margin-top: 0.7rem;
+  padding: 1.1rem;
+  border: 1px dashed rgba(179, 157, 255, 0.25);
+  border-radius: 8px;
+  color: #8f8f8f;
+  font-size: 0.82rem;
+  font-style: italic;
+  text-align: center;
+}
+.echo-count { margin-top: 0.5rem; color: #7d7d7d; font-size: 0.72rem; }
+
+/* Flavor lines inside Hub lists, matching the loot-card treatment. */
+.hub-item-flavor {
+  margin-top: 0.18rem;
+  color: #7f7f7f;
+  font-size: 0.7rem;
+  font-style: italic;
+  line-height: 1.35;
+}
+
+/* A tab with a single card shouldn't sit in half the width of a two-column grid. */
+.hub-panel-grid-single { grid-template-columns: 1fr; }

@@ -28,13 +28,19 @@ const STRONG_AGAINST: Record<Element, Element> = {
 };
 
 /**
- * Softer than Brave Frontier's own 1.5/0.5. BF can afford the harsher spread because a player
- * fields five units of mixed elements and swaps them per stage; here the hero carries one locked
- * element for an entire run, so a 0.5 into an unlucky zone pool turned a low-attack class
- * (Guardian) into a 30/100 survival rate against 45/100 elementless — measured, not guessed, in
- * balanceSim.test.ts. 1.35/0.75 keeps the matchup worth playing around while leaving every class
- * above the harness floor. Worth revisiting toward 1.5/0.5 once pre-run squad selection lets the
- * player counter-pick a zone.
+ * Softer than Brave Frontier's own 1.5/0.5, and re-measured after squad selection shipped.
+ *
+ * BF can afford the harsher spread because a player fields five units of mixed elements and swaps
+ * them per stage. The obvious conclusion was that adding pre-run squad selection here would let us
+ * push back toward 1.5/0.5 — it doesn't, and the harness says why. Squad runs sit at 100/100
+ * survivors at *every* setting tested, so they are insensitive to the multiplier; the binding
+ * constraint is the solo run, which is a supported way to play (leaving roster slots empty keeps
+ * companion loot in rotation). At 1.5/0.5 the low-attack Guardian falls to exactly the harness
+ * floor, 40/100, with a median death on wave 5. At 1.45/0.6 it is 47/100 and still dies on wave 5.
+ *
+ * So the tradeoff isn't "harsh elements vs. weak counterplay", it's "harsh elements vs. the solo
+ * path existing at all". 1.35/0.75 keeps the matchup worth playing around without quietly deleting
+ * a play style the squad screen explicitly offers.
  */
 export const STRONG_MULTIPLIER = 1.35;
 export const WEAK_MULTIPLIER = 0.75;

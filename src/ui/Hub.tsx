@@ -25,6 +25,8 @@ import { GachaReveal } from './GachaReveal';
 import { WorldTab } from './WorldTab';
 import { KingdomTab } from './KingdomTab';
 import { IdleEssenceBanner } from './IdleEssenceBanner';
+import { EchoesTab } from './EchoesTab';
+import { ElementBadge } from './ElementBadge';
 
 const MODIFIER_LABEL: Record<string, string> = {
   damageMultiplier: 'damage',
@@ -44,7 +46,7 @@ const BRANCH_LABEL: Record<TalentBranch, string> = {
   economy: 'Economy',
 };
 
-const TABS = ['talents', 'forge', 'gacha', 'companions', 'kingdom', 'grimoire', 'world'] as const;
+const TABS = ['talents', 'forge', 'gacha', 'companions', 'kingdom', 'echoes', 'grimoire', 'world'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   talents: 'Talents',
@@ -52,6 +54,7 @@ const TAB_LABEL: Record<Tab, string> = {
   gacha: 'Gacha',
   companions: 'Companions',
   kingdom: 'Kingdom',
+  echoes: 'Echoes',
   grimoire: 'Grimoire',
   world: 'World',
 };
@@ -61,6 +64,7 @@ const TAB_ICON: Record<Tab, string> = {
   gacha: '🔮',
   companions: '🤝',
   kingdom: '🏰',
+  echoes: '☾',
   grimoire: '📖',
   world: '🗺️',
 };
@@ -267,9 +271,12 @@ function GrimoireTab() {
                   {known ? relic.name : '???'}
                 </div>
                 {known && (
-                  <div className="hub-item-description">
-                    {RARITY_LABEL[relic.rarity]} · {relic.tags.join(', ')} — {relic.description}
-                  </div>
+                  <>
+                    <div className="hub-item-description">
+                      {RARITY_LABEL[relic.rarity]} · {relic.tags.join(', ')} — {relic.description}
+                    </div>
+                    {relic.flavor && <div className="hub-item-flavor">{relic.flavor}</div>}
+                  </>
                 )}
               </div>
             </div>
@@ -325,8 +332,15 @@ function GrimoireTab() {
             <div key={monster.id} className="hub-row-item">
               {known && <GeneratedPortrait category="monsters" id={monster.id} size={36} />}
               <div>
-                <div className="hub-item-name">{known ? monster.name : '???'}</div>
-                {known && <div className="hub-item-description">{monster.tier}</div>}
+                <div className="hub-item-name">
+                  {known ? monster.name : '???'} {known && <ElementBadge element={monster.element} compact />}
+                </div>
+                {known && (
+                  <>
+                    <div className="hub-item-description">{monster.tier}</div>
+                    {monster.flavor && <div className="hub-item-flavor">{monster.flavor}</div>}
+                  </>
+                )}
               </div>
             </div>
           );
@@ -367,6 +381,7 @@ export function Hub() {
       {tab === 'gacha' && <GachaTab />}
       {tab === 'companions' && <CompanionsTab />}
       {tab === 'kingdom' && <KingdomTab />}
+      {tab === 'echoes' && <EchoesTab />}
       {tab === 'grimoire' && <GrimoireTab />}
       {tab === 'world' && <WorldTab />}
 
