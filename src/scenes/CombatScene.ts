@@ -217,6 +217,7 @@ export class CombatScene extends Phaser.Scene {
         recruitedLordIds: meta.recruitedLordIds,
         treasuryLevel: meta.treasuryLevel,
       }),
+      echoLadder: meta.echoLadder,
     };
   }
 
@@ -378,6 +379,9 @@ export class CombatScene extends Phaser.Scene {
       }
       if (event.type === 'lootChosen') {
         this.discoverLootOption(event.option);
+      }
+      if (event.type === 'echoDefeated') {
+        useMetaStore.getState().recordEchoVictory(event.record);
       }
       if (event.type === 'runOver') {
         useMetaStore.getState().depositCurrency(this.waveManager.getRunState().gold);
@@ -547,6 +551,7 @@ export class CombatScene extends Phaser.Scene {
       monsterTier: run.monsterTier,
       isEcho: run.isEcho,
       monsterAffix: run.monsterAffix,
+      echoRecord: run.echoRecord,
       burstGauge: combat.burstGauge,
       burstArmed: combat.burstArmed,
       monsterHp: combat.monster.hp,
@@ -558,6 +563,7 @@ export class CombatScene extends Phaser.Scene {
       heroMaxHp: combat.hero.maxHp,
       isGameOver: run.isGameOver,
       endReason: run.endReason,
+      killedBy: run.killedBy,
       gold: run.gold,
       brokenParts: run.brokenParts,
       ownedRelics,

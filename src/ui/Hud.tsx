@@ -97,7 +97,7 @@ export function Hud() {
           </div>
           {state.isEcho ? (
             <div className="tier-badge tier-badge-echo" style={{ color: '#b39dff' }}>
-              ECHO
+              {state.echoRecord ? `ECHO · WAVE ${state.echoRecord.wave}` : 'ECHO'}
             </div>
           ) : (
             state.monsterTier !== 'normal' && (
@@ -239,9 +239,18 @@ export function GameOverOverlay() {
   const isGameOver = useRunStore((state) => state.isGameOver);
   const endReason = useRunStore((state) => state.endReason);
   const waveNumber = useRunStore((state) => state.waveNumber);
+  const killedBy = useRunStore((state) => state.killedBy);
   const setScreen = useMetaStore((state) => state.setScreen);
 
   if (!isGameOver) return null;
+
+  // Being killed by an Echo is the game's one genuinely personal defeat, so it gets its own line
+  // rather than being folded into the generic "fell on wave N".
+  const echoEpitaph = killedBy?.isEcho
+    ? killedBy.echoRecord
+      ? `You were killed by yourself — the ${killedBy.echoRecord.className} you ran to wave ${killedBy.echoRecord.wave}.`
+      : 'You were killed by yourself. The build was the problem.'
+    : null;
 
   return (
     <div className="game-over-overlay">
@@ -249,6 +258,11 @@ export function GameOverOverlay() {
       <div className="game-over-subtitle">
         {endReason === 'abandoned' ? `Retreated on wave ${waveNumber}` : `Fell on wave ${waveNumber}`}
       </div>
+      {echoEpitaph ? (
+        <div className="game-over-echo">{echoEpitaph}</div>
+      ) : (
+        killedBy && <div className="game-over-killer">Killed by {killedBy.name}</div>
+      )}
       <button type="button" className="restart-button" onClick={() => setScreen('hub')}>
         Return to Camp
       </button>

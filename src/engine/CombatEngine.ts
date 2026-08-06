@@ -281,7 +281,12 @@ export class CombatEngine {
     // Monsters still never consult `partyModifiers` (a Phase 3 boundary), but elemental affinity
     // is a property of the matchup rather than of the party's build, so it cuts both ways.
     const monsterAffinity = affinityBetween(monster.element, target.element);
-    const damage = Math.max(1, Math.round(this.monsterAttackValue() * affinityMultiplier(monster.element, target.element)));
+    let rawDamage = this.monsterAttackValue() * affinityMultiplier(monster.element, target.element);
+    if (this.monsterTraits.critChance && this.rng.next() < this.monsterTraits.critChance) {
+      rawDamage *= BASE_CRIT_MULTIPLIER + (this.monsterTraits.critDamageMultiplier ?? 0);
+      events.push({ type: 'critHit', targetId: target.id });
+    }
+    const damage = Math.max(1, Math.round(rawDamage));
     target.hp = Math.max(0, target.hp - damage);
     events.push({ type: 'attack', attackerId: monster.id, targetId: target.id, damage, targetHpAfter: target.hp });
     this.applyMonsterLifesteal(damage, events);

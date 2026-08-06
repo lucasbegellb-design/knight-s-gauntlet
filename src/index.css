@@ -1474,3 +1474,22 @@ body {
   letter-spacing: 0.12em;
   cursor: help;
 }
+
+/* ---- Echo epitaph (ui/Hud.tsx) ---- */
+.game-over-echo {
+  max-width: 30rem;
+  margin: 0.5rem auto 0.9rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid rgba(179, 157, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(179, 157, 255, 0.08);
+  color: #cbb9ff;
+  font-size: 0.9rem;
+  font-style: italic;
+  line-height: 1.5;
+}
+.game-over-killer {
+  margin: 0.3rem 0 0.8rem;
+  font-size: 0.82rem;
+  color: #9a9a9a;
+}

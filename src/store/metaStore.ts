@@ -9,6 +9,10 @@ import { forgeWeaponUpgradeCost, MAX_FORGE_WEAPON_LEVEL } from '../data/forgeWea
 import { allCompanions, STARTER_COMPANION_IDS } from '../data/companions';
 import { pullGacha, pullGachaMulti, nextPityState, DEFAULT_PITY_STATE, type GachaPullResult, type GachaPityState } from '../engine/gacha';
 import { pendingIdleEssence } from '../engine/idleEssence';
+import type { EchoRecord } from '../engine/WaveManager';
+
+/** Keeps the persisted ladder bounded; older records describe builds the player has long outgrown. */
+export const MAX_ECHO_LADDER_ENTRIES = 12;
 import { MAX_ACTIVE_COMPANIONS as MAX_SQUAD_SIZE } from '../engine/WaveManager';
 import { territoryRegistry, lordRegistry } from '../data/kingdom';
 import { MAX_TREASURY_LEVEL, treasuryUpgradeCost } from '../engine/kingdom';
@@ -50,6 +54,8 @@ interface PersistedMeta {
   forgeWeaponLevel: number;
   /** Companions unlocked via the Gacha (src/ui/Gacha.tsx) — only these can appear in an in-run loot pool. */
   unlockedCompanionIds: string[];
+  /** Builds that have beaten an Echo, newest first — they return as Echoes in later runs. */
+  echoLadder: EchoRecord[];
   /** Pity streak counters carried across every pull (single and x10 alike) — see engine/gacha.ts. */
   gachaPity: GachaPityState;
   /** Kingdom territories conquered / lords recruited (see src/data/kingdom, src/engine/kingdom.ts) — a post-max-level essence sink. */
@@ -83,6 +89,7 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   brokenParts: 0,
   forgeWeaponLevel: 0,
   unlockedCompanionIds: [...STARTER_COMPANION_IDS],
+  echoLadder: [],
   gachaPity: { ...DEFAULT_PITY_STATE },
   conqueredTerritoryIds: [],
   recruitedLordIds: [],
@@ -149,6 +156,8 @@ interface MetaStore extends PersistedMeta {
   clearGachaResults: () => void;
   /** Deposits whatever idle essence has accrued since lastEssenceCollectionAt and resets the timer. */
   collectIdleEssence: () => void;
+  /** Records a build that just beat an Echo so it can return as one. */
+  recordEchoVictory: (record: EchoRecord) => void;
 }
 
 function persistedSlice(state: MetaStore): PersistedMeta {
@@ -162,6 +171,7 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     brokenParts: state.brokenParts,
     forgeWeaponLevel: state.forgeWeaponLevel,
     unlockedCompanionIds: state.unlockedCompanionIds,
+    echoLadder: state.echoLadder,
     gachaPity: state.gachaPity,
     conqueredTerritoryIds: state.conqueredTerritoryIds,
     recruitedLordIds: state.recruitedLordIds,
@@ -224,6 +234,13 @@ export const useMetaStore = create<MetaStore>((set) => ({
       return { selectedCompanionIds: [companionId, ...state.selectedCompanionIds.filter((id) => id !== companionId)] };
     }),
   confirmSquad: () => set({ screen: 'run' as Screen }),
+  recordEchoVictory: (record) =>
+    set((state) => {
+      // Newest first, and capped: an unbounded ladder would grow with every run forever, and the
+      // oldest records are the least interesting anyway (they describe builds long since outgrown).
+      const deduped = state.echoLadder.filter((entry) => !(entry.classId === record.classId && entry.wave === record.wave));
+      return { echoLadder: [record, ...deduped].slice(0, MAX_ECHO_LADDER_ENTRIES) };
+    }),
   depositCurrency: (amount) => set((state) => ({ currency: state.currency + Math.max(0, amount) })),
   depositBrokenParts: (amount) => set((state) => ({ brokenParts: state.brokenParts + Math.max(0, amount) })),
   purchaseTalentRank: (talentId) =>

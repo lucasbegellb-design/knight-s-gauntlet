@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { MonsterTier } from '../data/monster.types';
 import type { Element } from '../engine/elements';
 import type { WaveAffix } from '../data/affixes';
+import type { EchoRecord } from '../engine/WaveManager';
 import type { EquipmentSlot } from '../data/equipment.types';
 import type { CompanionRole } from '../data/companion.types';
 import type { Rarity } from '../data/rarity';
@@ -45,6 +46,8 @@ export interface RunSnapshot {
   isEcho: boolean;
   /** Affix rolled onto this wave's monster, if any. */
   monsterAffix: WaveAffix | null;
+  /** Set when this Echo is a resurrected past run rather than a live mirror. */
+  echoRecord: EchoRecord | null;
   /** Party Brave Burst charge, 0..1. */
   burstGauge: number;
   /** True while the burst is armed and awaiting a manual trigger (or its auto-fire timeout). */
@@ -59,6 +62,8 @@ export interface RunSnapshot {
   isGameOver: boolean;
   /** Why the run ended — distinguishes a voluntary flee from a death, for the game-over overlay copy. */
   endReason: 'death' | 'abandoned';
+  /** What landed the killing blow, for the game-over copy. */
+  killedBy: { name: string; isEcho: boolean; echoRecord: EchoRecord | null } | null;
   gold: number;
   brokenParts: number;
   ownedRelics: OwnedRelicDisplay[];
@@ -95,6 +100,7 @@ const initialSnapshot: RunSnapshot = {
   monsterTier: 'normal',
   isEcho: false,
   monsterAffix: null,
+  echoRecord: null,
   burstGauge: 0,
   burstArmed: false,
   monsterHp: 0,
@@ -106,6 +112,7 @@ const initialSnapshot: RunSnapshot = {
   heroMaxHp: 0,
   isGameOver: false,
   endReason: 'death',
+  killedBy: null,
   gold: 0,
   brokenParts: 0,
   ownedRelics: [],

@@ -20,6 +20,7 @@ function makeMetaBonuses(overrides: Partial<MetaBonuses> = {}): MetaBonuses {
     lootLuckBonus: 0,
     forgeLevel: 0,
     companionUpgrades: {},
+    echoLadder: [],
     classModifiers: [],
     forgeWeaponModifiers: [],
     kingdomModifiers: [],

@@ -27,6 +27,13 @@ export interface MonsterTraits {
   burstFillMultiplier?: number;
   /** Fraction of max HP regenerated per second of combat. */
   regenPerSecondFraction?: number;
+  /**
+   * Chance this monster's own attacks crit. No affix uses it — it exists for the Echo, which is
+   * built from the hero's stats and should therefore fight with the hero's crit profile.
+   */
+  critChance?: number;
+  /** Crit damage multiplier bonus, paired with `critChance`. */
+  critDamageMultiplier?: number;
 }
 
 /**

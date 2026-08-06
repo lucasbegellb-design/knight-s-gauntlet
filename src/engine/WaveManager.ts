@@ -4,7 +4,7 @@ import { applyXpGain, statsForLevel, type HeroProgress } from './heroProgression
 import { monsterPoolForWave, scaledMonsterStats, tierForWave, zoneForWave } from './waveScaling';
 import { rollBrokenParts } from './brokenParts';
 import { rollWaveAffix } from './affixes';
-import type { WaveAffix } from '../data/affixes';
+import type { MonsterTraits, WaveAffix } from '../data/affixes';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
 import { collectConditionals } from './conditionals';
 import type { RunConditionContext } from './CombatEngine';
@@ -64,6 +64,21 @@ const ECHO_WAVE_INTERVAL = 15;
 /** The Echo fights at a fraction of the hero's own power, not 1:1 — a fair fight, not an unwinnable wall. */
 const ECHO_POWER_FRACTION = 0.9;
 const ECHO_ID = 'echo_of_self';
+/**
+ * Echo ladder — the one mechanic in this game that isn't standard to the genre, promoted from a
+ * curiosity every fifteen waves to the spine of the whole thing.
+ *
+ * Beating an Echo records the build that beat it. Later runs can then face *that* Echo instead of
+ * the live mirror: your own past attempts become the bestiary. The difficulty stops being a number
+ * someone tuned and becomes a history of your own decisions, which is the only thing this game
+ * does that nothing else does.
+ *
+ * Ladder Echoes only start appearing once a run is deep enough to have earned the reference, and
+ * they are scaled to the current wave rather than replayed at their recorded power — a wave-30
+ * ghost at wave-30 numbers would be free by wave 80.
+ */
+const ECHO_LADDER_MIN_WAVE = 30;
+const ECHO_LADDER_CHANCE = 0.5;
 /** The Echo isn't a bestiary entry so it has no authored xpReward — approximates what a same-tier monster would give. */
 const ECHO_XP_REWARD_BY_TIER: Record<MonsterTier, number> = {
   normal: 12,
@@ -79,6 +94,27 @@ const ECHO_XP_REWARD_BY_TIER: Record<MonsterTier, number> = {
  * data, computed by the caller (see `src/engine/talents.ts`) — WaveManager
  * stays framework-free and fully testable without touching the meta store.
  */
+/**
+ * A build that once beat an Echo, stored so it can come back as one. Ratios rather than raw
+ * numbers, so a record stays meaningful when it is replayed twenty waves deeper than it was set.
+ */
+export interface EchoRecord {
+  classId: string;
+  className: string;
+  element?: Element;
+  /** Wave the record was set on — surfaced in the Echo's name so the player recognises it. */
+  wave: number;
+  level: number;
+  /** Attack relative to the mirror the wave would otherwise have produced. */
+  attackRatio: number;
+  /** Max HP relative to the same. */
+  hpRatio: number;
+  attackIntervalMs: number;
+  critChance: number;
+  critDamageMultiplier: number;
+  lifestealPercent: number;
+}
+
 export interface MetaBonuses {
   talentModifiers: RelicModifier[];
   lootLuckBonus: number;
@@ -90,6 +126,8 @@ export interface MetaBonuses {
   forgeWeaponModifiers: RelicModifier[];
   /** Passive modifiers from conquered Kingdom territories/recruited lords/Royal Treasury level (see src/engine/kingdom.ts). */
   kingdomModifiers: RelicModifier[];
+  /** Past builds that beat an Echo, eligible to return as one. Newest first. */
+  echoLadder: EchoRecord[];
 }
 
 export const DEFAULT_META_BONUSES: MetaBonuses = {
@@ -100,6 +138,7 @@ export const DEFAULT_META_BONUSES: MetaBonuses = {
   classModifiers: [],
   forgeWeaponModifiers: [],
   kingdomModifiers: [],
+  echoLadder: [],
 };
 
 export interface OwnedRelic {
@@ -131,6 +170,8 @@ export interface RunState {
   isGameOver: boolean;
   /** Why the run ended — distinguishes a voluntary flee (abandonRun) from a death, for UI copy. */
   endReason: 'death' | 'abandoned';
+  /** What killed the run: the monster's display name, and whether it was an Echo. */
+  killedBy: { name: string; isEcho: boolean; echoRecord: EchoRecord | null } | null;
   monsterTier: MonsterTier;
   monsterName: string;
   /** True when the current wave's monster is an Echo of the hero's own stats, not a bestiary entry. */
@@ -139,6 +180,8 @@ export interface RunState {
   monsterElement?: Element;
   /** Affix rolled onto the current wave, if any — see `src/engine/affixes.ts`. */
   monsterAffix: WaveAffix | null;
+  /** Set when the current Echo is a resurrected past run rather than a live mirror. */
+  echoRecord: EchoRecord | null;
   zoneId: string;
   zoneName: string;
   gold: number;
@@ -158,7 +201,7 @@ export type WaveEvent =
   | {
       type: 'waveStarted';
       waveNumber: number;
-      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number; isEcho: boolean; element?: Element; affix: WaveAffix | null };
+      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number; isEcho: boolean; element?: Element; affix: WaveAffix | null; echoRecord: EchoRecord | null };
       zone: { id: string; name: string; isNewZone: boolean };
     }
   | { type: 'waveCleared'; waveNumber: number; xpGained: number }
@@ -167,7 +210,11 @@ export type WaveEvent =
   | { type: 'lootOffered'; options: LootOption[] }
   | { type: 'lootChosen'; option: LootOption }
   | { type: 'revived' }
-  | { type: 'runOver'; waveNumber: number };
+  | { type: 'runOver'; waveNumber: number }
+  /** An Echo wave was cleared — carries the record to add to the ladder. */
+  | { type: 'echoDefeated'; record: EchoRecord }
+  /** This Echo wave resurrected a past run rather than mirroring the current one. */
+  | { type: 'echoFromLadder'; record: EchoRecord };
 
 function pickFrom(list: MonsterDefinition[], rng: Rng): MonsterDefinition {
   if (list.length === 0) {
@@ -224,6 +271,8 @@ export class WaveManager {
   private pendingCompanionHp = new Map<string, number>();
   /** First companion of the pre-run squad; its leader skill applies party-wide while it lives. */
   private leaderCompanionId: string | null = null;
+  /** Traits for the current Echo wave, or null on any normal wave. */
+  private echoTraits: MonsterTraits | null = null;
 
   constructor(
     heroDef: HeroDefinition,
@@ -251,10 +300,12 @@ export class WaveManager {
       heroProgress: { level: 1, xp: 0 },
       isGameOver: false,
       endReason: 'death',
+      killedBy: null,
       monsterTier: 'normal',
       monsterName: '',
       isEcho: false,
       monsterAffix: null,
+      echoRecord: null,
       zoneId: '',
       zoneName: '',
       gold: 0,
@@ -318,6 +369,11 @@ export class WaveManager {
         this.handleWaveCleared(events);
       } else if (!this.tryPhoenixRevive(events)) {
         this.state.isGameOver = true;
+        this.state.killedBy = {
+          name: this.state.monsterName,
+          isEcho: this.state.isEcho,
+          echoRecord: this.state.echoRecord,
+        };
         events.push({ type: 'runOver', waveNumber: this.state.waveNumber });
       }
     }
@@ -352,6 +408,7 @@ export class WaveManager {
         isEcho: this.state.isEcho,
         element: monster.element,
         affix: this.state.monsterAffix,
+        echoRecord: this.state.echoRecord,
       },
       zone: { id: this.state.zoneId, name: this.state.zoneName, isNewZone: this.state.zoneId !== previousZoneId },
     });
@@ -380,6 +437,10 @@ export class WaveManager {
     this.state.heroProgress = progress;
     if (levelsGained > 0) {
       events.push({ type: 'levelUp', newLevel: progress.level });
+    }
+
+    if (this.state.isEcho) {
+      events.push({ type: 'echoDefeated', record: this.buildEchoRecord() });
     }
 
     const brokenPartsGained = rollBrokenParts(this.state.monsterTier, this.brokenPartsRng);
@@ -475,10 +536,51 @@ export class WaveManager {
       spellCasters,
       this.computeConditionals(),
       this.runConditionContext(),
-      this.state.monsterAffix?.traits ?? {},
+      this.echoTraits ?? this.state.monsterAffix?.traits ?? {},
     );
     events.push({ type: 'revived' });
     return true;
+  }
+
+  /**
+   * Chooses a past run to resurrect as this wave's Echo, or null to mirror the current build.
+   * Uses the main rng stream deliberately: which Echo you face is part of the run's shape, not a
+   * side roll, and a seeded run should reproduce it.
+   */
+  private pickLadderEcho(waveNumber: number): EchoRecord | null {
+    const ladder = this.metaBonuses.echoLadder;
+    if (ladder.length === 0 || waveNumber < ECHO_LADDER_MIN_WAVE) return null;
+    if (this.rng.next() >= ECHO_LADDER_CHANCE) return null;
+    const index = Math.min(ladder.length - 1, Math.floor(this.rng.next() * ladder.length));
+    return ladder[index] ?? null;
+  }
+
+  /** Snapshots the build that just beat an Echo, as ratios against the mirror it faced. */
+  private buildEchoRecord(): EchoRecord {
+    const modifiers = this.computeModifiers();
+    const levelStats = statsForLevel(this.heroDef, this.state.heroProgress.level);
+    const maxHp = Math.round(levelStats.maxHp * (1 + modifiers.maxHpBonusPercentSum));
+    const attack = (levelStats.attack + modifiers.flatDamageBonusSum) * (1 + modifiers.damageMultiplierSum);
+    const monster = this.engine.getState().monster;
+
+    // Ratios against the Echo that was actually fought, so a record replayed at a deeper wave
+    // still describes *how* that build fought rather than how big its numbers happened to be.
+    const mirrorAttack = Math.max(1, attack * ECHO_POWER_FRACTION);
+    const mirrorHp = Math.max(1, maxHp * ECHO_POWER_FRACTION);
+
+    return {
+      classId: this.heroDef.id,
+      className: this.heroDef.name,
+      element: this.heroDef.element,
+      wave: this.state.waveNumber,
+      level: this.state.heroProgress.level,
+      attackRatio: monster.maxHp > 0 ? monster.attack / mirrorAttack : 1,
+      hpRatio: monster.maxHp / mirrorHp,
+      attackIntervalMs: Math.round(levelStats.attackIntervalMs / (1 + modifiers.attackSpeedMultiplierSum)),
+      critChance: modifiers.critChanceSum,
+      critDamageMultiplier: modifiers.critDamageMultiplierSum,
+      lifestealPercent: modifiers.lifestealPercentSum,
+    };
   }
 
   /** Re-derives the content definition for whichever monster the active CombatEngine is fighting. */
@@ -660,16 +762,36 @@ export class WaveManager {
 
     let monster;
     if (this.state.isEcho) {
-      const echoAttack = Math.max(1, Math.round((levelStats.attack + modifiers.flatDamageBonusSum) * (1 + modifiers.damageMultiplierSum) * ECHO_POWER_FRACTION));
-      const echoMaxHp = Math.max(1, Math.round(maxHp * ECHO_POWER_FRACTION));
-      const echoName = `Echo of ${this.heroDef.name}`;
+      // The live mirror: what the hero itself fights with this wave, at ECHO_POWER_FRACTION.
+      const mirrorAttack = Math.max(1, Math.round((levelStats.attack + modifiers.flatDamageBonusSum) * (1 + modifiers.damageMultiplierSum) * ECHO_POWER_FRACTION));
+      const mirrorMaxHp = Math.max(1, Math.round(maxHp * ECHO_POWER_FRACTION));
+
+      const record = this.pickLadderEcho(waveNumber);
+      this.state.echoRecord = record;
+
+      const echoAttack = record ? Math.max(1, Math.round(mirrorAttack * record.attackRatio)) : mirrorAttack;
+      const echoMaxHp = record ? Math.max(1, Math.round(mirrorMaxHp * record.hpRatio)) : mirrorMaxHp;
+      const echoInterval = record ? record.attackIntervalMs : attackIntervalMs;
+      const echoElement = record ? record.element : this.heroDef.element;
+      const echoName = record ? `Echo of ${record.className}, wave ${record.wave}` : `Echo of ${this.heroDef.name}`;
+
       this.state.monsterName = echoName;
-      this.state.monsterElement = this.heroDef.element;
+      this.state.monsterElement = echoElement;
       // The Echo deliberately never rolls an affix: its whole premise is being an exact readout of
-      // the player's own build, and a bolted-on modifier would break that reading.
+      // a build, and a bolted-on modifier would break that reading.
       this.state.monsterAffix = null;
-      monster = buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, attackIntervalMs, this.heroDef.element);
+      // The Echo now fights with the hero's own crit and lifesteal profile, not just raw numbers.
+      // It routes through MonsterTraits rather than the party modifier pipeline, so the Phase 3
+      // boundary holds — the mirror gets its own copy of the numbers, not a shared reference.
+      this.echoTraits = {
+        critChance: (record ? record.critChance : modifiers.critChanceSum) * ECHO_POWER_FRACTION,
+        critDamageMultiplier: record ? record.critDamageMultiplier : modifiers.critDamageMultiplierSum,
+        lifestealPercent: (record ? record.lifestealPercent : modifiers.lifestealPercentSum) * ECHO_POWER_FRACTION,
+      };
+      monster = buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, echoInterval, echoElement);
     } else {
+      this.state.echoRecord = null;
+      this.echoTraits = null;
       const tierPool = TIER_POOLS[tier];
       const pool = monsterPoolForWave(waveNumber, tierPool);
       const def = pickFrom(pool, this.rng);
@@ -707,7 +829,7 @@ export class WaveManager {
       spellCasters,
       this.computeConditionals(),
       this.runConditionContext(),
-      this.state.monsterAffix?.traits ?? {},
+      this.echoTraits ?? this.state.monsterAffix?.traits ?? {},
     );
   }
 }
