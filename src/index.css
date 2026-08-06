@@ -1516,3 +1516,31 @@ body {
   font-style: italic;
   line-height: 1.4;
 }
+
+/* ---- Group waves (engine/WaveManager.ts) ---- */
+.pack-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  margin: 0 0 0.2rem 0.35rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid rgba(231, 76, 60, 0.35);
+  border-radius: 999px;
+  background: rgba(231, 76, 60, 0.1);
+  vertical-align: middle;
+  cursor: help;
+}
+.pack-pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+.pack-pip-alive { background: #e74c3c; box-shadow: 0 0 5px rgba(231, 76, 60, 0.7); }
+.pack-badge-label {
+  margin-left: 0.15rem;
+  color: #e08c85;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}

@@ -57,14 +57,14 @@ describe('Brave Burst gauge', () => {
   it('fires on manual trigger, resetting the gauge and damaging the monster', () => {
     const engine = new CombatEngine(unit(), punchingBag());
     tickUntilArmed(engine);
-    const hpBefore = engine.getState().monster.hp;
+    const hpBefore = engine.getState().monsters[0]!.hp;
 
     const events = engine.triggerBurst();
     const burst = events.find((e) => e.type === 'braveBurst');
 
     expect(burst).toBeDefined();
     expect(burst?.type === 'braveBurst' && burst.manual).toBe(true);
-    expect(engine.getState().monster.hp).toBeLessThan(hpBefore);
+    expect(engine.getState().monsters[0]!.hp).toBeLessThan(hpBefore);
     expect(engine.getState().burstGauge).toBe(0);
     expect(engine.getState().burstArmed).toBe(false);
   });

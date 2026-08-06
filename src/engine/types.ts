@@ -12,6 +12,12 @@ export interface Combatant {
   nextAttackAt: number;
   /** Elemental affinity. Undefined is neutral both ways — see `elements.ts`. */
   element?: Element;
+  /**
+   * Set by the engine once this unit's `death` event has been emitted. A single burst or execute
+   * chain can drop several enemies at once, and each still owes the renderer exactly one death
+   * event — no more, no fewer.
+   */
+  deathReported?: boolean;
 }
 
 /**
@@ -68,7 +74,12 @@ export type CombatEvent =
 
 export interface CombatState {
   hero: Combatant;
-  monster: Combatant;
+  /**
+   * Every enemy in the wave, in spawn order. The party focuses the front-most survivor (see
+   * `primaryMonster`), so a pack is cleared front to back. Single-enemy waves are simply a group
+   * of one, which is why most of the engine and its tests did not have to change shape.
+   */
+  monsters: Combatant[];
   allies: AllyUnit[];
   elapsedMs: number;
   isOver: boolean;

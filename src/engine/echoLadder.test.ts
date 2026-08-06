@@ -35,7 +35,7 @@ describe('Echo of Yourself', () => {
   it('mirrors the live build when the ladder is empty', () => {
     const manager = new WaveManager(knight, 1);
     const engine = manager.getCombatState();
-    expect(engine.monster.id).not.toBe('echo_of_self');
+    expect(engine.monsters[0]!.id).not.toBe('echo_of_self');
 
     const echoManager = new WaveManager(knight, 1);
     // buildWaveEngine is exercised through the public run state; wave 15 is the first Echo.

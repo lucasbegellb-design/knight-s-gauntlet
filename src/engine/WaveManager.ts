@@ -8,6 +8,7 @@ import type { MonsterTraits, WaveAffix } from '../data/affixes';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
 import { collectConditionals } from './conditionals';
 import type { RunConditionContext } from './CombatEngine';
+import { primaryMonster } from './CombatEngine';
 import { generateLootOptions, type LootContext, type LootOption } from './loot';
 import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from './types';
 import type { HeroDefinition } from '../data/hero.types';
@@ -64,6 +65,33 @@ const ECHO_WAVE_INTERVAL = 15;
 /** The Echo fights at a fraction of the hero's own power, not 1:1 — a fair fight, not an unwinnable wall. */
 const ECHO_POWER_FRACTION = 0.9;
 const ECHO_ID = 'echo_of_self';
+
+/**
+ * Group waves.
+ *
+ * A single enemy per wave meant every fight had exactly one shape: a damage race against one HP
+ * bar. Two or three enemies change the maths rather than just the numbers, because each keeps its
+ * own attack timer — a pack of three out-actions one monster of the same total health, so raw
+ * damage stops being the only answer and clear speed starts to matter.
+ *
+ * Only `normal` waves group. A boss is a duel and stays one, minibosses stay readable as a single
+ * threat, and the Echo is a mirror of one hero. Group size is capped and gated behind the opening
+ * waves so the game still teaches its baseline first.
+ */
+const GROUP_MIN_WAVE = 4;
+const MAX_GROUP_SIZE = 3;
+/** Chance a normal wave spawns extra enemies, climbing with depth up to the cap below. */
+const GROUP_BASE_CHANCE = 0.2;
+const GROUP_CHANCE_PER_WAVE = 0.008;
+const GROUP_MAX_CHANCE = 0.62;
+/** Chance a group that already has a second enemy gets a third. */
+const THIRD_ENEMY_CHANCE = 0.35;
+/**
+ * Each enemy in a group is individually weaker than a solo monster of the same wave, or a pack
+ * would simply be N times a fair fight. The total still exceeds one monster's worth — that surplus
+ * is the reward for a wave that also demands faster clearing.
+ */
+const GROUP_STAT_SCALE: Record<number, number> = { 1: 1, 2: 0.66, 3: 0.5 };
 /**
  * Echo ladder — the one mechanic in this game that isn't standard to the genre, promoted from a
  * curiosity every fifteen waves to the spine of the whole thing.
@@ -182,6 +210,8 @@ export interface RunState {
   monsterAffix: WaveAffix | null;
   /** Set when the current Echo is a resurrected past run rather than a live mirror. */
   echoRecord: EchoRecord | null;
+  /** How many enemies this wave spawned. 1 for bosses, minibosses and Echoes. */
+  monsterGroupSize: number;
   zoneId: string;
   zoneName: string;
   gold: number;
@@ -232,8 +262,10 @@ function buildCombatant(
   attack: number,
   attackIntervalMs: number,
   element?: Element,
+  /** Delay added to the first swing; used to stagger a group so it doesn't act in unison. */
+  startOffsetMs = 0,
 ): Combatant {
-  return { id, name, hp, maxHp, attack, attackIntervalMs, nextAttackAt: attackIntervalMs, element };
+  return { id, name, hp, maxHp, attack, attackIntervalMs, nextAttackAt: attackIntervalMs + startOffsetMs, element };
 }
 
 const TIER_POOLS: Record<MonsterTier, MonsterDefinition[]> = {
@@ -306,6 +338,7 @@ export class WaveManager {
       isEcho: false,
       monsterAffix: null,
       echoRecord: null,
+      monsterGroupSize: 1,
       zoneId: '',
       zoneName: '',
       gold: 0,
@@ -395,7 +428,7 @@ export class WaveManager {
     const previousZoneId = this.state.zoneId;
     this.engine = this.buildWaveEngine(this.state.waveNumber + 1, this.pendingHeroHp);
 
-    const monster = this.engine.getState().monster;
+    const monster = primaryMonster(this.engine.getState()) ?? (this.engine.getState().monsters[0] as Combatant);
     events.push({
       type: 'waveStarted',
       waveNumber: this.state.waveNumber,
@@ -430,7 +463,10 @@ export class WaveManager {
   private handleWaveCleared(events: WaveEvent[]): void {
     const clearedWave = this.state.waveNumber;
     const modifiers = this.computeModifiers();
-    const xpGained = Math.round(this.currentMonsterDef().xpReward * (1 + modifiers.xpMultiplierSum));
+    // Every enemy in the wave pays out, so clearing a group is worth more than clearing a solo
+    // wave — otherwise a harder wave would reward the same as an easier one.
+    const baseXp = this.currentMonsterDefs().reduce((sum, def) => sum + def.xpReward, 0);
+    const xpGained = Math.round(baseXp * (1 + modifiers.xpMultiplierSum));
     events.push({ type: 'waveCleared', waveNumber: clearedWave, xpGained });
 
     const { progress, levelsGained } = applyXpGain(this.state.heroProgress, xpGained);
@@ -513,15 +549,9 @@ export class WaveManager {
     const revivedHp = Math.max(1, Math.round(maxHp * PHOENIX_REVIVE_HP_FRACTION));
     const hero = buildCombatant(this.heroDef.id, this.heroDef.name, revivedHp, maxHp, levelStats.attack, attackIntervalMs, this.heroDef.element);
 
-    const currentMonster = this.engine.getState().monster;
-    const monster = buildCombatant(
-      currentMonster.id,
-      currentMonster.name,
-      currentMonster.hp,
-      currentMonster.maxHp,
-      currentMonster.attack,
-      currentMonster.attackIntervalMs,
-      currentMonster.element,
+    // Phoenix revive rebuilds the fight in place; every surviving enemy keeps its current HP.
+    const revivedMonsters = this.engine.getState().monsters.map((current) =>
+      buildCombatant(current.id, current.name, current.hp, current.maxHp, current.attack, current.attackIntervalMs, current.element),
     );
 
     const { allies, spellCasters } = this.buildAlliesAndSpells(modifiers);
@@ -529,7 +559,7 @@ export class WaveManager {
     this.seed += 1;
     this.engine = new CombatEngine(
       hero,
-      monster,
+      revivedMonsters,
       this.seed,
       modifiers,
       allies,
@@ -555,13 +585,25 @@ export class WaveManager {
     return ladder[index] ?? null;
   }
 
+  /**
+   * Decides how many enemies this wave spawns. Uses the affix stream rather than the main one so
+   * adding group waves does not shift the monster-pick or loot-roll sequences of existing seeds.
+   */
+  private rollGroupSize(waveNumber: number, tier: MonsterTier): number {
+    if (tier !== 'normal' || waveNumber < GROUP_MIN_WAVE) return 1;
+
+    const chance = Math.min(GROUP_MAX_CHANCE, GROUP_BASE_CHANCE + (waveNumber - GROUP_MIN_WAVE) * GROUP_CHANCE_PER_WAVE);
+    if (this.affixRng.next() >= chance) return 1;
+    return this.affixRng.next() < THIRD_ENEMY_CHANCE ? Math.min(MAX_GROUP_SIZE, 3) : 2;
+  }
+
   /** Snapshots the build that just beat an Echo, as ratios against the mirror it faced. */
   private buildEchoRecord(): EchoRecord {
     const modifiers = this.computeModifiers();
     const levelStats = statsForLevel(this.heroDef, this.state.heroProgress.level);
     const maxHp = Math.round(levelStats.maxHp * (1 + modifiers.maxHpBonusPercentSum));
     const attack = (levelStats.attack + modifiers.flatDamageBonusSum) * (1 + modifiers.damageMultiplierSum);
-    const monster = this.engine.getState().monster;
+    const monster = primaryMonster(this.engine.getState()) ?? (this.engine.getState().monsters[0] as Combatant);
 
     // Ratios against the Echo that was actually fought, so a record replayed at a deeper wave
     // still describes *how* that build fought rather than how big its numbers happened to be.
@@ -583,10 +625,14 @@ export class WaveManager {
     };
   }
 
-  /** Re-derives the content definition for whichever monster the active CombatEngine is fighting. */
-  private currentMonsterDef(): MonsterDefinition {
-    const monster = this.engine.getState().monster;
-    if (monster.id === ECHO_ID) {
+  /** Re-derives the content definitions for every enemy in the active wave. */
+  private currentMonsterDefs(): MonsterDefinition[] {
+    return this.engine.getState().monsters.map((monster) => this.monsterDefFor(monster));
+  }
+
+  /** Re-derives the content definition backing one live enemy. */
+  private monsterDefFor(monster: Combatant): MonsterDefinition {
+    if (monster.id.startsWith(ECHO_ID)) {
       // Not a bestiary entry — synthesize just enough of a definition to award tier-appropriate XP.
       return {
         id: ECHO_ID,
@@ -599,7 +645,10 @@ export class WaveManager {
         xpReward: ECHO_XP_REWARD_BY_TIER[this.state.monsterTier],
       };
     }
-    const found = allMonsters.find((m) => m.id === monster.id);
+    // Group members carry a `#n` suffix so each has a unique combat id; the bestiary key is the
+    // part before it.
+    const defId = monster.id.split('#')[0] as string;
+    const found = allMonsters.find((m) => m.id === defId);
     if (!found) {
       throw new Error(`Unknown monster id in active combat: ${monster.id}`);
     }
@@ -760,7 +809,7 @@ export class WaveManager {
 
     this.state.isEcho = waveNumber > 0 && waveNumber % ECHO_WAVE_INTERVAL === 0;
 
-    let monster;
+    let monsters: Combatant[];
     if (this.state.isEcho) {
       // The live mirror: what the hero itself fights with this wave, at ECHO_POWER_FRACTION.
       const mirrorAttack = Math.max(1, Math.round((levelStats.attack + modifiers.flatDamageBonusSum) * (1 + modifiers.damageMultiplierSum) * ECHO_POWER_FRACTION));
@@ -783,12 +832,13 @@ export class WaveManager {
       // The Echo now fights with the hero's own crit and lifesteal profile, not just raw numbers.
       // It routes through MonsterTraits rather than the party modifier pipeline, so the Phase 3
       // boundary holds — the mirror gets its own copy of the numbers, not a shared reference.
+      this.state.monsterGroupSize = 1;
       this.echoTraits = {
         critChance: (record ? record.critChance : modifiers.critChanceSum) * ECHO_POWER_FRACTION,
         critDamageMultiplier: record ? record.critDamageMultiplier : modifiers.critDamageMultiplierSum,
         lifestealPercent: (record ? record.lifestealPercent : modifiers.lifestealPercentSum) * ECHO_POWER_FRACTION,
       };
-      monster = buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, echoInterval, echoElement);
+      monsters = [buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, echoInterval, echoElement)];
     } else {
       this.state.echoRecord = null;
       this.echoTraits = null;
@@ -797,16 +847,37 @@ export class WaveManager {
       const def = pickFrom(pool, this.rng);
       this.state.monsterName = def.name;
       this.state.monsterElement = def.element;
-      const scaled = scaledMonsterStats(def, waveNumber);
       const affix = rollWaveAffix(waveNumber, tier, this.affixRng);
       this.state.monsterAffix = affix;
 
-      const affixedHp = Math.max(1, Math.round(scaled.maxHp * (affix?.hpMultiplier ?? 1)));
-      const affixedAttack = Math.max(1, Math.round(scaled.attack * (affix?.attackMultiplier ?? 1)));
+      const groupSize = this.rollGroupSize(waveNumber, tier);
+      const statScale = GROUP_STAT_SCALE[groupSize] ?? 1;
+      const scaled = scaledMonsterStats(def, waveNumber);
+
+      const affixedHp = Math.max(1, Math.round(scaled.maxHp * (affix?.hpMultiplier ?? 1) * statScale));
+      const affixedAttack = Math.max(1, Math.round(scaled.attack * (affix?.attackMultiplier ?? 1) * statScale));
       const affixedInterval = Math.max(120, Math.round(def.attackIntervalMs * (affix?.attackIntervalMultiplier ?? 1)));
 
-      if (affix) this.state.monsterName = `${affix.name} ${def.name}`;
-      monster = buildCombatant(def.id, this.state.monsterName, affixedHp, affixedHp, affixedAttack, affixedInterval, def.element);
+      const baseName = affix ? `${affix.name} ${def.name}` : def.name;
+      this.state.monsterName = groupSize > 1 ? `${baseName} x${groupSize}` : baseName;
+      this.state.monsterGroupSize = groupSize;
+
+      monsters = Array.from({ length: groupSize }, (_, index) =>
+        buildCombatant(
+          // Each group member needs a unique combat id (the renderer and the event stream key off
+          // it); `monsterDefFor` strips the suffix back off to find the bestiary entry.
+          groupSize > 1 ? `${def.id}#${index}` : def.id,
+          baseName,
+          affixedHp,
+          affixedHp,
+          affixedAttack,
+          // Stagger the pack's opening swings so three enemies don't land as one simultaneous
+          // spike on the first exchange.
+          affixedInterval,
+          def.element,
+          index * Math.round(affixedInterval / Math.max(1, groupSize)),
+        ),
+      );
     }
 
     let heroHp = maxHp;
@@ -822,7 +893,7 @@ export class WaveManager {
     this.seed += 1;
     return new CombatEngine(
       hero,
-      monster,
+      monsters,
       this.seed,
       modifiers,
       allies,

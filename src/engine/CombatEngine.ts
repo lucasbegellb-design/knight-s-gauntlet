@@ -31,6 +31,13 @@ const BURST_MANUAL_BONUS = 1.5;
 /** Healers contribute a party-wide heal instead of damage, at this multiple of their heal output. */
 const BURST_HEAL_MULTIPLIER = 1.8;
 const BURST_MANUAL_WINDOW_MS = 2600;
+/**
+ * The burst hits every living enemy, not just the focused one. This is the deliberate answer to
+ * group waves: single-target attrition is what a pack punishes, so the party's one big button has
+ * to be the thing that resets a bad crowd. Split damage would make it worse against groups than
+ * against a boss, which is exactly backwards.
+ */
+const BURST_SPLASH_TO_ALL = true;
 
 /**
  * Run-level facts a conditional can key off that the engine cannot see from one fight alone.
@@ -58,36 +65,44 @@ function pickWeightedUnit(pool: { unit: Combatant; weight: number }[], rng: Rng)
   return (pool[pool.length - 1] as { unit: Combatant; weight: number }).unit;
 }
 
+/** The enemy the party is currently focusing: the first one still standing, front of the line. */
+export function primaryMonster(state: Readonly<CombatState>): Combatant | undefined {
+  return state.monsters.find((monster) => monster.hp > 0);
+}
+
 /**
- * Pure hero-vs-monster (+ optional allies/spells) combat simulation. No
- * rendering or framework dependencies — callers (Phaser scenes, tests,
- * future UI) only read `getState()` and react to the events `tick()`
+ * Pure party-vs-enemies combat simulation. No rendering or framework dependencies — callers
+ * (Phaser scenes, tests, future UI) only read `getState()` and react to the events `tick()`
  * returns.
  *
- * `partyModifiers` (relic/equipment/talent/companion-aura bonuses,
- * aggregated once per wave by WaveManager) apply to every attack the party
- * lands — the hero's own attacks and non-healer allies' attacks alike —
- * plus shared party-wide effects (execute, lifesteal, reflect). Monster
- * attacks always use flat base damage. With `NEUTRAL_MODIFIERS` and no
- * allies/spells (the defaults), behavior is identical to a build with none
- * of Phase 3/4's systems.
+ * `partyModifiers` (relic/equipment/talent/companion-aura bonuses, aggregated once per wave by
+ * WaveManager) apply to every attack the party lands — the hero's own attacks and non-healer
+ * allies' attacks alike — plus shared party-wide effects (execute, lifesteal, reflect). Monster
+ * attacks never consult them; the enemy side has its own vocabulary in `MonsterTraits`.
+ *
+ * A wave can hold several enemies. `state.monsters` is the source of truth and is ordered:
+ * the party always focuses the front-most survivor (`primaryMonster`), so a pack visibly gets
+ * cleared front to back rather than everything chipping down at once. Each enemy keeps its own
+ * attack timer, so a group of three genuinely out-actions a single monster of the same total
+ * health — which is the entire reason to have groups.
  */
 export class CombatEngine {
   private readonly state: CombatState;
   private readonly rng: Rng;
   private readonly heroId: string;
+  private readonly monsterIds: Set<string>;
   private readonly partyModifiers: AggregatedModifiers;
   private readonly spells: SpellCaster[];
   private readonly conditionals: ConditionalModifier[];
   private readonly runContext: RunConditionContext;
-  /** Monster-side rules (affixes and future per-monster abilities). Empty means the old behavior. */
+  /** Wave-level monster rules (affixes, Echo profile). Shared by every enemy in the wave. */
   private readonly monsterTraits: MonsterTraits;
   /** Elapsed time at which the gauge filled, used to expire the manual-trigger window. */
   private burstArmedAt = 0;
 
   constructor(
     hero: Combatant,
-    monster: Combatant,
+    monsters: Combatant | Combatant[],
     seed = 1,
     partyModifiers: AggregatedModifiers = NEUTRAL_MODIFIERS,
     allies: AllyUnit[] = [],
@@ -96,9 +111,22 @@ export class CombatEngine {
     runContext: RunConditionContext = DEFAULT_RUN_CONTEXT,
     monsterTraits: MonsterTraits = {},
   ) {
-    this.state = { hero, monster, allies, elapsedMs: 0, isOver: false, winnerId: null, burstGauge: 0, burstArmed: false };
+    // Accepting a bare Combatant keeps every single-enemy call site (and the majority of the
+    // test suite) unchanged; a lone monster is just a group of one.
+    const monsterList = Array.isArray(monsters) ? monsters : [monsters];
+    this.state = {
+      hero,
+      monsters: monsterList,
+      allies,
+      elapsedMs: 0,
+      isOver: false,
+      winnerId: null,
+      burstGauge: 0,
+      burstArmed: false,
+    };
     this.rng = new Rng(seed);
     this.heroId = hero.id;
+    this.monsterIds = new Set(monsterList.map((monster) => monster.id));
     this.partyModifiers = partyModifiers;
     this.spells = spells;
     this.conditionals = conditionals;
@@ -115,6 +143,18 @@ export class CombatEngine {
     return this.rng.next();
   }
 
+  private livingMonsters(): Combatant[] {
+    return this.state.monsters.filter((monster) => monster.hp > 0);
+  }
+
+  private focusTarget(): Combatant | undefined {
+    return primaryMonster(this.state);
+  }
+
+  private isMonster(id: string): boolean {
+    return this.monsterIds.has(id);
+  }
+
   /** Advance the simulation by dtMs, returning the events emitted during this tick. */
   tick(dtMs: number): CombatEvent[] {
     const events: CombatEvent[] = [];
@@ -126,9 +166,10 @@ export class CombatEngine {
 
     while (!this.state.isOver) {
       const actingAllies = this.state.allies.filter((ally) => ally.actsIndependently && ally.combatant.hp > 0);
+      const actingMonsters = this.livingMonsters();
       const candidateTimes = [
         this.state.hero.nextAttackAt,
-        this.state.monster.nextAttackAt,
+        ...actingMonsters.map((monster) => monster.nextAttackAt),
         ...actingAllies.map((ally) => ally.combatant.nextAttackAt),
         ...this.spells.map((spell) => spell.nextCastAt),
       ];
@@ -146,10 +187,13 @@ export class CombatEngine {
         if (spell.nextCastAt <= nextEventAt) this.resolveSpellCast(spell, events);
       }
       if (!this.state.isOver && this.state.hero.nextAttackAt <= nextEventAt) {
-        this.resolveHeroTurn(this.state.hero, this.state.monster, events);
+        this.resolveHeroTurn(this.state.hero, events);
       }
-      if (!this.state.isOver && this.state.monster.nextAttackAt <= nextEventAt) {
-        this.resolveMonsterTurn(this.state.monster, events);
+      for (const monster of actingMonsters) {
+        if (this.state.isOver) break;
+        // Re-check hp: an earlier monster's turn in this same timestamp can't kill its allies, but
+        // the party's turns above can have killed this one before it acts.
+        if (monster.hp > 0 && monster.nextAttackAt <= nextEventAt) this.resolveMonsterTurn(monster, events);
       }
     }
 
@@ -166,8 +210,8 @@ export class CombatEngine {
   }
 
   /**
-   * Player-triggered Brave Burst. Returns false (and does nothing) when the gauge isn't armed,
-   * so the UI can render a dead button rather than the caller having to guard.
+   * Player-triggered Brave Burst. Does nothing when the gauge isn't armed, so the UI can render a
+   * dead button rather than the caller having to guard.
    */
   triggerBurst(): CombatEvent[] {
     const events: CombatEvent[] = [];
@@ -188,30 +232,36 @@ export class CombatEngine {
   }
 
   /**
-   * Resolves the squad-wide burst: every living non-healer contributes a heavy hit through the
-   * normal damage path (so party modifiers and elemental affinity both still apply), and every
-   * living healer converts its contribution into a party heal instead.
+   * Resolves the squad-wide burst: every living non-healer contributes a heavy hit to every living
+   * enemy through the normal damage path (so party modifiers and elemental affinity both still
+   * apply), and every living healer converts its contribution into a party heal instead.
    */
   private fireBurst(manual: boolean, events: CombatEvent[]): void {
     this.state.burstArmed = false;
     this.state.burstGauge = 0;
 
     const powerMultiplier = BURST_ATTACK_MULTIPLIER * (manual ? BURST_MANUAL_BONUS : 1);
-    const monster = this.state.monster;
     const contributors: string[] = [];
     let totalDamage = 0;
     let totalHealed = 0;
 
     const strike = (unit: Combatant): void => {
-      if (unit.hp <= 0 || monster.hp <= 0 || this.state.isOver) return;
+      if (unit.hp <= 0 || this.state.isOver) return;
+      const targets = BURST_SPLASH_TO_ALL ? this.livingMonsters() : [this.focusTarget()].filter((t): t is Combatant => !!t);
+      if (targets.length === 0) return;
+
       contributors.push(unit.id);
-      // Route through a synthetic attacker so computeAttackDamage's crit/burn/affinity all apply
-      // to the burst exactly as they would to a normal hit, without duplicating that pipeline.
-      const burstUnit: Combatant = { ...unit, attack: unit.attack * powerMultiplier };
-      const damage = this.computeAttackDamage(burstUnit, monster, events);
-      monster.hp = Math.max(0, monster.hp - damage);
-      totalDamage += damage;
-      this.applyLifesteal(unit, damage, events);
+      for (const target of targets) {
+        if (target.hp <= 0) continue;
+        // Route through a synthetic attacker so computeAttackDamage's crit/burn/affinity all apply
+        // to the burst exactly as they would to a normal hit, without duplicating that pipeline.
+        const burstUnit: Combatant = { ...unit, attack: unit.attack * powerMultiplier };
+        const damage = this.computeAttackDamage(burstUnit, target, events);
+        target.hp = Math.max(0, target.hp - damage);
+        totalDamage += damage;
+        this.applyLifesteal(unit, damage, events);
+        this.applyExecute(target, events);
+      }
     };
 
     if (this.state.hero.hp > 0) strike(this.state.hero);
@@ -234,13 +284,8 @@ export class CombatEngine {
       strike(ally.combatant);
     }
 
-    this.applyExecute(monster, events);
     events.push({ type: 'braveBurst', manual, damage: totalDamage, healed: totalHealed, contributors });
-
-    if (monster.hp <= 0 && !this.state.isOver) {
-      events.push({ type: 'death', combatantId: monster.id });
-      this.endCombat(this.heroId, events);
-    }
+    this.reportMonsterDeaths(events);
   }
 
   private endCombat(winnerId: string, events: CombatEvent[]): void {
@@ -250,22 +295,39 @@ export class CombatEngine {
     events.push({ type: 'combatEnd', winnerId });
   }
 
-  private resolveHeroTurn(hero: Combatant, monster: Combatant, events: CombatEvent[]): void {
+  /**
+   * Emits a `death` for every enemy that has just dropped and ends the fight once the last one
+   * does. Centralised because a single burst (or an execute chain) can kill several at once, and
+   * each of them still owes the renderer its own death event.
+   */
+  private reportMonsterDeaths(events: CombatEvent[]): void {
+    for (const monster of this.state.monsters) {
+      if (monster.hp <= 0 && !monster.deathReported) {
+        monster.deathReported = true;
+        events.push({ type: 'death', combatantId: monster.id });
+      }
+    }
+    if (!this.state.isOver && this.livingMonsters().length === 0) {
+      this.endCombat(this.heroId, events);
+    }
+  }
+
+  private resolveHeroTurn(hero: Combatant, events: CombatEvent[]): void {
     hero.nextAttackAt += hero.attackIntervalMs;
 
-    const totalDamage = this.computeAttackDamage(hero, monster, events);
-    monster.hp = Math.max(0, monster.hp - totalDamage);
-    events.push({ type: 'attack', attackerId: hero.id, targetId: monster.id, damage: totalDamage, targetHpAfter: monster.hp });
+    const target = this.focusTarget();
+    if (!target) return;
 
-    this.applyExecute(monster, events);
+    const totalDamage = this.computeAttackDamage(hero, target, events);
+    target.hp = Math.max(0, target.hp - totalDamage);
+    events.push({ type: 'attack', attackerId: hero.id, targetId: target.id, damage: totalDamage, targetHpAfter: target.hp });
+
+    this.applyExecute(target, events);
     this.applyLifesteal(hero, totalDamage, events);
     this.applyThorns(hero, totalDamage, events);
     this.chargeBurst(BURST_FILL_PER_PARTY_ATTACK, events);
 
-    if (monster.hp <= 0 && !this.state.isOver) {
-      events.push({ type: 'death', combatantId: monster.id });
-      this.endCombat(hero.id, events);
-    }
+    this.reportMonsterDeaths(events);
   }
 
   private resolveMonsterTurn(monster: Combatant, events: CombatEvent[]): void {
@@ -281,7 +343,7 @@ export class CombatEngine {
     // Monsters still never consult `partyModifiers` (a Phase 3 boundary), but elemental affinity
     // is a property of the matchup rather than of the party's build, so it cuts both ways.
     const monsterAffinity = affinityBetween(monster.element, target.element);
-    let rawDamage = this.monsterAttackValue() * affinityMultiplier(monster.element, target.element);
+    let rawDamage = this.monsterAttackValue(monster) * affinityMultiplier(monster.element, target.element);
     if (this.monsterTraits.critChance && this.rng.next() < this.monsterTraits.critChance) {
       rawDamage *= BASE_CRIT_MULTIPLIER + (this.monsterTraits.critDamageMultiplier ?? 0);
       events.push({ type: 'critHit', targetId: target.id });
@@ -289,7 +351,7 @@ export class CombatEngine {
     const damage = Math.max(1, Math.round(rawDamage));
     target.hp = Math.max(0, target.hp - damage);
     events.push({ type: 'attack', attackerId: monster.id, targetId: target.id, damage, targetHpAfter: target.hp });
-    this.applyMonsterLifesteal(damage, events);
+    this.applyMonsterLifesteal(monster, damage, events);
     if (monsterAffinity !== 'neutral') {
       events.push({ type: 'affinity', attackerId: monster.id, targetId: target.id, affinity: monsterAffinity });
     }
@@ -301,13 +363,11 @@ export class CombatEngine {
       events.push({ type: 'death', combatantId: target.id });
       if (isHeroTarget) {
         this.endCombat(monster.id, events);
+        return;
       }
     }
 
-    if (monster.hp <= 0 && !this.state.isOver) {
-      events.push({ type: 'death', combatantId: monster.id });
-      this.endCombat(this.heroId, events);
-    }
+    this.reportMonsterDeaths(events);
   }
 
   private resolveAllyTurn(ally: AllyUnit, events: CombatEvent[]): void {
@@ -325,35 +385,36 @@ export class CombatEngine {
       return;
     }
 
-    const monster = this.state.monster;
-    if (monster.hp <= 0) return;
+    const target = this.focusTarget();
+    if (!target) return;
 
-    const damage = this.computeAttackDamage(ally.combatant, monster, events);
-    monster.hp = Math.max(0, monster.hp - damage);
-    events.push({ type: 'attack', attackerId: ally.combatant.id, targetId: monster.id, damage, targetHpAfter: monster.hp });
-    this.applyExecute(monster, events);
+    const damage = this.computeAttackDamage(ally.combatant, target, events);
+    target.hp = Math.max(0, target.hp - damage);
+    events.push({ type: 'attack', attackerId: ally.combatant.id, targetId: target.id, damage, targetHpAfter: target.hp });
+    this.applyExecute(target, events);
     this.applyLifesteal(ally.combatant, damage, events);
     this.applyThorns(ally.combatant, damage, events);
     this.chargeBurst(BURST_FILL_PER_PARTY_ATTACK, events);
 
-    if (ally.role === 'summoner' && ally.doubleStrikeChance > 0 && monster.hp > 0 && this.rng.next() < ally.doubleStrikeChance) {
-      const bonusDamage = this.computeAttackDamage(ally.combatant, monster, events);
-      monster.hp = Math.max(0, monster.hp - bonusDamage);
-      events.push({ type: 'attack', attackerId: ally.combatant.id, targetId: monster.id, damage: bonusDamage, targetHpAfter: monster.hp });
-      this.applyExecute(monster, events);
-      this.applyLifesteal(ally.combatant, bonusDamage, events);
+    if (ally.role === 'summoner' && ally.doubleStrikeChance > 0 && this.rng.next() < ally.doubleStrikeChance) {
+      // A summoner's second strike re-picks its target, so it rolls onto the next enemy rather
+      // than being wasted on a corpse when the first blow already finished one off.
+      const second = this.focusTarget();
+      if (second) {
+        const bonusDamage = this.computeAttackDamage(ally.combatant, second, events);
+        second.hp = Math.max(0, second.hp - bonusDamage);
+        events.push({ type: 'attack', attackerId: ally.combatant.id, targetId: second.id, damage: bonusDamage, targetHpAfter: second.hp });
+        this.applyExecute(second, events);
+        this.applyLifesteal(ally.combatant, bonusDamage, events);
+      }
     }
 
-    if (monster.hp <= 0 && !this.state.isOver) {
-      events.push({ type: 'death', combatantId: monster.id });
-      this.endCombat(this.heroId, events);
-    }
+    this.reportMonsterDeaths(events);
   }
 
   private resolveSpellCast(spell: SpellCaster, events: CombatEvent[]): void {
     spell.nextCastAt += spell.cooldownMs;
     const hero = this.state.hero;
-    const monster = this.state.monster;
 
     if (spell.effect === 'heal') {
       const healAmount = Math.min(hero.maxHp - hero.hp, spell.power);
@@ -364,14 +425,13 @@ export class CombatEngine {
       return;
     }
 
-    if (monster.hp <= 0) return;
-    monster.hp = Math.max(0, monster.hp - spell.power);
-    events.push({ type: 'spellCast', spellId: spell.id, targetId: monster.id, effect: spell.effect, amount: spell.power });
+    const target = this.focusTarget();
+    if (!target) return;
 
-    if (monster.hp <= 0 && !this.state.isOver) {
-      events.push({ type: 'death', combatantId: monster.id });
-      this.endCombat(this.heroId, events);
-    }
+    target.hp = Math.max(0, target.hp - spell.power);
+    events.push({ type: 'spellCast', spellId: spell.id, targetId: target.id, effect: spell.effect, amount: spell.power });
+
+    this.reportMonsterDeaths(events);
   }
 
   /**
@@ -424,7 +484,7 @@ export class CombatEngine {
 
     // Monster-side damage reduction is applied last so it reduces the whole hit, crit and burn
     // included — an Armored enemy should feel armored against a crit, not only against chip damage.
-    if (target.id === this.state.monster.id && this.monsterTraits.damageReduction) {
+    if (this.isMonster(target.id) && this.monsterTraits.damageReduction) {
       damage *= 1 - this.monsterTraits.damageReduction;
     }
 
@@ -435,13 +495,14 @@ export class CombatEngine {
   private applyMonsterRegen(dtMs: number, events: CombatEvent[]): void {
     const fraction = this.monsterTraits.regenPerSecondFraction;
     if (!fraction || this.state.isOver || dtMs <= 0) return;
-    const monster = this.state.monster;
-    if (monster.hp <= 0 || monster.hp >= monster.maxHp) return;
 
-    const healed = Math.min(monster.maxHp - monster.hp, Math.round(monster.maxHp * fraction * (dtMs / 1000)));
-    if (healed > 0) {
-      monster.hp += healed;
-      events.push({ type: 'monsterHeal', amount: healed, reason: 'regen' });
+    for (const monster of this.livingMonsters()) {
+      if (monster.hp >= monster.maxHp) continue;
+      const healed = Math.min(monster.maxHp - monster.hp, Math.round(monster.maxHp * fraction * (dtMs / 1000)));
+      if (healed > 0) {
+        monster.hp += healed;
+        events.push({ type: 'monsterHeal', amount: healed, reason: 'regen' });
+      }
     }
   }
 
@@ -458,16 +519,16 @@ export class CombatEngine {
 
     if (attacker.hp <= 0) {
       events.push({ type: 'death', combatantId: attacker.id });
-      if (attacker.id === this.heroId) this.endCombat(this.state.monster.id, events);
+      if (attacker.id === this.heroId) {
+        this.endCombat(this.focusTarget()?.id ?? 'monsters', events);
+      }
     }
   }
 
   /** Monster lifesteal, mirroring the party's own but sourced from traits rather than modifiers. */
-  private applyMonsterLifesteal(damageDealt: number, events: CombatEvent[]): void {
+  private applyMonsterLifesteal(monster: Combatant, damageDealt: number, events: CombatEvent[]): void {
     const percent = this.monsterTraits.lifestealPercent;
-    if (!percent) return;
-    const monster = this.state.monster;
-    if (monster.hp <= 0) return;
+    if (!percent || monster.hp <= 0) return;
 
     const healed = Math.min(monster.maxHp - monster.hp, Math.round(damageDealt * percent));
     if (healed > 0) {
@@ -476,9 +537,8 @@ export class CombatEngine {
     }
   }
 
-  /** The monster's live attack value, doubling (or whatever the affix says) once it enrages. */
-  private monsterAttackValue(): number {
-    const monster = this.state.monster;
+  /** A monster's live attack value, doubling (or whatever the affix says) once it enrages. */
+  private monsterAttackValue(monster: Combatant): number {
     const { enrageThreshold, enrageAttackMultiplier } = this.monsterTraits;
     if (!enrageThreshold || !enrageAttackMultiplier) return monster.attack;
     const fraction = monster.maxHp > 0 ? monster.hp / monster.maxHp : 0;

@@ -105,7 +105,7 @@ describe('monster traits in combat', () => {
     const heal = events.find((e) => e.type === 'monsterHeal');
 
     expect(heal?.type === 'monsterHeal' && heal.reason).toBe('regen');
-    expect(engine.getState().monster.hp).toBe(5100);
+    expect(engine.getState().monsters[0]!.hp).toBe(5100);
   });
 
   it('doubles a frenzied monster’s attack only once it is wounded', () => {

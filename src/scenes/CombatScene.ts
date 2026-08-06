@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { primaryMonster } from '../engine/CombatEngine';
 import { playSfx } from '../audio/sfx';
 import { WaveManager, type EquippedItems, type MetaBonuses, type WaveEvent } from '../engine/WaveManager';
 import type { LootOption } from '../engine/loot';
@@ -98,6 +99,25 @@ const HERO_X = 250;
 const HERO_Y = 300;
 const MONSTER_X = 570;
 const MONSTER_Y = 250;
+/**
+ * Where a wave's enemies stand, by group size. A solo enemy keeps the exact centre-right spot it
+ * always had, so single-enemy waves — every boss, miniboss and Echo — look untouched; groups fan
+ * out into a readable diagonal that mirrors the party's own formation on the left.
+ */
+const MONSTER_SLOTS: Record<number, { x: number; y: number }[]> = {
+  1: [{ x: MONSTER_X, y: MONSTER_Y }],
+  2: [
+    { x: 545, y: 300 },
+    { x: 655, y: 215 },
+  ],
+  3: [
+    { x: 520, y: 320 },
+    { x: 615, y: 250 },
+    { x: 700, y: 190 },
+  ],
+};
+/** Group members render smaller than a solo enemy so three of them still fit and stay legible. */
+const MONSTER_GROUP_SCALE: Record<number, number> = { 1: 1, 2: 0.82, 3: 0.68 };
 const COMPANION_SLOTS = [
   { x: 130, y: 225 },
   { x: 150, y: 345 },
@@ -130,7 +150,7 @@ interface UnitView {
 export class CombatScene extends Phaser.Scene {
   private waveManager!: WaveManager;
   private heroView!: UnitView;
-  private monsterView!: UnitView;
+  private monsterViews: UnitView[] = [];
   private allyViews: UnitView[] = [];
   private zoneBackdrop: Phaser.GameObjects.Image | null = null;
   private zoneScrim: Phaser.GameObjects.Rectangle | null = null;
@@ -256,10 +276,14 @@ export class CombatScene extends Phaser.Scene {
     );
 
     const state = this.waveManager.getCombatState();
-    useMetaStore.getState().discover('monster', state.monster.id);
+    // Group members share one bestiary entry; discover by definition id, not combat id.
+    for (const monster of state.monsters) {
+      useMetaStore.getState().discover('monster', monster.id.split('#')[0] as string);
+    }
 
     if (this.heroView) this.destroyUnitView(this.heroView);
-    if (this.monsterView) this.destroyUnitView(this.monsterView);
+    this.monsterViews.forEach((view) => this.destroyUnitView(view));
+    this.monsterViews = [];
     this.allyViews.forEach((view) => this.destroyUnitView(view));
     this.allyViews = [];
 
@@ -307,29 +331,53 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private rebuildMonsterView(): void {
-    if (this.monsterView) this.destroyUnitView(this.monsterView);
+    this.monsterViews.forEach((view) => this.destroyUnitView(view));
+    this.monsterViews = [];
     const state = this.waveManager.getCombatState();
     const runState = this.waveManager.getRunState();
     const appearance = MONSTER_APPEARANCE[runState.monsterTier];
-    const scale = MONSTER_SPRITE_SCALE[state.monster.id] ?? 1;
-    // An Echo has no bestiary art of its own — it's a mirror of the hero, so it wears the hero's
-    // own sprite (tinted shadow-purple) instead of falling back to the generic rectangle.
-    const textureKey = runState.isEcho ? heroTextureKey(this.heroClassId) : monsterTextureKey(state.monster.id);
-    const attackTextureKey = runState.isEcho ? heroAttackTextureKey(this.heroClassId) : monsterAttackTextureKey(state.monster.id);
-    this.monsterView = this.createUnitView(
-      MONSTER_X,
-      MONSTER_Y,
-      Math.round(appearance.width * scale),
-      Math.round(appearance.height * scale),
-      appearance.color,
-      textureKey,
-      undefined,
-      undefined,
-      runState.isEcho ? ECHO_TINT : undefined,
-      attackTextureKey,
-    );
-    if ('setFlipX' in this.monsterView.body) this.monsterView.body.setFlipX(true);
-    this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
+    const count = Math.max(1, state.monsters.length);
+    const slots = MONSTER_SLOTS[count] ?? MONSTER_SLOTS[3] ?? [{ x: MONSTER_X, y: MONSTER_Y }];
+    const groupScale = MONSTER_GROUP_SCALE[count] ?? 0.68;
+
+    state.monsters.forEach((monster, index) => {
+      // Group members share one bestiary entry, so the art key is the id with its `#n` suffix off.
+      const defId = monster.id.split('#')[0] as string;
+      const scale = (MONSTER_SPRITE_SCALE[defId] ?? 1) * groupScale;
+      // An Echo has no bestiary art of its own — it's a mirror of the hero, so it wears the hero's
+      // own sprite (tinted shadow-purple) instead of falling back to the generic rectangle.
+      const textureKey = runState.isEcho ? heroTextureKey(this.heroClassId) : monsterTextureKey(defId);
+      const attackTextureKey = runState.isEcho ? heroAttackTextureKey(this.heroClassId) : monsterAttackTextureKey(defId);
+      const slot = slots[Math.min(index, slots.length - 1)] as { x: number; y: number };
+
+      const view = this.createUnitView(
+        slot.x,
+        slot.y,
+        Math.round(appearance.width * scale),
+        Math.round(appearance.height * scale),
+        appearance.color,
+        textureKey,
+        undefined,
+        undefined,
+        runState.isEcho ? ECHO_TINT : undefined,
+        attackTextureKey,
+      );
+      if ('setFlipX' in view.body) view.body.setFlipX(true);
+      this.updateUnitView(view, monster.name, monster.hp, monster.maxHp);
+      this.monsterViews.push(view);
+    });
+  }
+
+  private isMonsterId(id: string): boolean {
+    return this.waveManager.getCombatState().monsters.some((monster) => monster.id === id);
+  }
+
+  /** Screen position of the wave's current focus target, for callouts that point at "the enemy". */
+  private focusPosition(): { x: number; y: number } {
+    const state = this.waveManager.getCombatState();
+    const index = state.monsters.findIndex((monster) => monster.hp > 0);
+    const view = this.monsterViews[index >= 0 ? index : 0];
+    return view ? { x: view.baseX, y: view.baseY } : { x: MONSTER_X, y: MONSTER_Y };
   }
 
   private rebuildAllyViews(): void {
@@ -378,7 +426,7 @@ export class CombatScene extends Phaser.Scene {
           playSfx('echo');
         }
         if (event.monster.affix) {
-          this.showFloatingText(MONSTER_X, MONSTER_Y - 210, event.monster.affix.name.toUpperCase(), event.monster.affix.color, 18);
+          this.showFloatingText(this.focusPosition().x, this.focusPosition().y - 210, event.monster.affix.name.toUpperCase(), event.monster.affix.color, 18);
         }
         if (event.zone.isNewZone) {
           this.applyZoneBackground();
@@ -434,7 +482,7 @@ export class CombatScene extends Phaser.Scene {
       const wasCrit = this.pendingCrit;
       this.pendingCrit = false;
       if (attackerView) this.attackLunge(attackerView, targetView?.baseX ?? attackerView.baseX);
-      const monsterIsAttacker = event.attackerId === this.waveManager.getCombatState().monster.id;
+      const monsterIsAttacker = this.isMonsterId(event.attackerId);
       // Delay the impact (flash/shake/burst/number) until the attacker's lunge actually reaches the target — a real hit-stop beat instead of everything firing at once.
       this.time.delayedCall(ATTACK_LUNGE_OUT_MS, () => {
         if (targetView) this.hitImpact(targetView, event.damage, wasCrit);
@@ -458,7 +506,7 @@ export class CombatScene extends Phaser.Scene {
       this.showFloatingText(HERO_X, HERO_Y - 165, `+${event.amount}`, '#2ecc71');
     }
     if (event.type === 'execute') {
-      this.showFloatingText(MONSTER_X, MONSTER_Y - 150, 'EXECUTED', '#e74c3c', 20);
+      this.showFloatingText(this.focusPosition().x, this.focusPosition().y - 150, 'EXECUTED', '#e74c3c', 20);
     }
     if (event.type === 'reflect') {
       this.showFloatingText(MONSTER_X, MONSTER_Y - 180, `-${event.damage} reflect`, '#9b59b6');
@@ -476,9 +524,9 @@ export class CombatScene extends Phaser.Scene {
     if (event.type === 'affinity') {
       // Only the party's own hits get the callout — echoing it for every monster swing as well
       // would double the on-screen noise for the same piece of information.
-      if (event.attackerId !== this.waveManager.getCombatState().monster.id) {
+      if (!this.isMonsterId(event.attackerId)) {
         const strong = event.affinity === 'strong';
-        this.showFloatingText(MONSTER_X, MONSTER_Y - 130, strong ? 'WEAK POINT!' : 'RESISTED', strong ? '#7bffb0' : '#ff8f8f', strong ? 20 : 16);
+        this.showFloatingText(this.focusPosition().x, this.focusPosition().y - 130, strong ? 'WEAK POINT!' : 'RESISTED', strong ? '#7bffb0' : '#ff8f8f', strong ? 20 : 16);
         playSfx(strong ? 'affinityStrong' : 'affinityWeak');
       }
     }
@@ -487,7 +535,7 @@ export class CombatScene extends Phaser.Scene {
       this.showFloatingText(pos.x, pos.y - 150, `-${event.damage} thorns`, '#9be07b');
     }
     if (event.type === 'monsterHeal') {
-      this.showFloatingText(MONSTER_X, MONSTER_Y - 145, `+${event.amount}`, '#7bffc4', 14);
+      this.showFloatingText(this.focusPosition().x, this.focusPosition().y - 145, `+${event.amount}`, '#7bffc4', 14);
     }
     if (event.type === 'burstReady') {
       this.showFloatingText(400, 150, 'BRAVE BURST READY', '#ffd84d', 20);
@@ -508,18 +556,20 @@ export class CombatScene extends Phaser.Scene {
     this.cameras.main.shake(manual ? 380 : 240, manual ? 0.022 : 0.013);
     this.cameras.main.flash(manual ? 260 : 160, 255, 232, 138, false);
 
-    if (this.heroView) this.attackLunge(this.heroView, MONSTER_X);
+    const focusX = this.focusPosition().x;
+    if (this.heroView) this.attackLunge(this.heroView, focusX);
     this.allyViews.forEach((view, index) => {
-      this.time.delayedCall(index * 55, () => this.attackLunge(view, MONSTER_X));
+      this.time.delayedCall(index * 55, () => this.attackLunge(view, focusX));
     });
 
     this.showFloatingText(400, 120, manual ? 'BRAVE BURST!' : 'brave burst', '#ffe98a', manual ? 30 : 22);
-    this.showFloatingText(MONSTER_X, MONSTER_Y - 195, `-${damage}`, '#ffd84d', manual ? 30 : 24);
+    this.showFloatingText(this.focusPosition().x, this.focusPosition().y - 195, `-${damage}`, '#ffd84d', manual ? 30 : 24);
   }
 
   private viewForId(id: string, heroId: string): UnitView | undefined {
     if (id === heroId) return this.heroView;
-    if (id === this.waveManager.getCombatState().monster.id) return this.monsterView;
+    const monsterIndex = this.waveManager.getCombatState().monsters.findIndex((monster) => monster.id === id);
+    if (monsterIndex >= 0) return this.monsterViews[monsterIndex];
     const allies = this.waveManager.getCombatState().allies;
     const index = allies.findIndex((a) => a.combatant.id === id);
     return index >= 0 ? this.allyViews[index] : undefined;
@@ -527,7 +577,11 @@ export class CombatScene extends Phaser.Scene {
 
   private positionForId(id: string, heroId: string): { x: number; y: number } | undefined {
     if (id === heroId) return { x: HERO_X, y: HERO_Y };
-    if (id === this.waveManager.getCombatState().monster.id) return { x: MONSTER_X, y: MONSTER_Y };
+    const monsterIndex = this.waveManager.getCombatState().monsters.findIndex((monster) => monster.id === id);
+    if (monsterIndex >= 0) {
+      const view = this.monsterViews[monsterIndex];
+      return view ? { x: view.baseX, y: view.baseY } : { x: MONSTER_X, y: MONSTER_Y };
+    }
     const allies = this.waveManager.getCombatState().allies;
     const index = allies.findIndex((a) => a.combatant.id === id);
     if (index < 0) return undefined;
@@ -557,12 +611,16 @@ export class CombatScene extends Phaser.Scene {
       HP_BAR_WIDTH,
     );
 
-    this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
-    this.updateAtbBar(
-      this.monsterView,
-      state.monster.hp > 0 ? this.atbProgress(state.monster.nextAttackAt, state.monster.attackIntervalMs, state.elapsedMs) : null,
-      HP_BAR_WIDTH,
-    );
+    state.monsters.forEach((monster, index) => {
+      const view = this.monsterViews[index];
+      if (!view) return;
+      this.updateUnitView(view, monster.name, monster.hp, monster.maxHp);
+      this.updateAtbBar(
+        view,
+        monster.hp > 0 ? this.atbProgress(monster.nextAttackAt, monster.attackIntervalMs, state.elapsedMs) : null,
+        HP_BAR_WIDTH,
+      );
+    });
 
     state.allies.forEach((ally, index) => {
       const view = this.allyViews[index];
@@ -609,7 +667,16 @@ export class CombatScene extends Phaser.Scene {
     const companions = run.companions.map((owned) => {
       const def = companionRegistry.get(owned.id);
       const live = combat.allies.find((a) => a.combatant.id === owned.id);
-      return { id: owned.id, name: def.name, role: def.role, hp: live ? live.combatant.hp : owned.hp, maxHp: def.maxHp };
+      // maxHp must come from the live combatant, not the raw definition: WaveManager scales a
+      // companion's max HP by the party's maxHpBonusPercent, so reading the unscaled definition
+      // here rendered impossible bars like "31/30". Leader skills made that routinely visible.
+      return {
+        id: owned.id,
+        name: def.name,
+        role: def.role,
+        hp: live ? live.combatant.hp : owned.hp,
+        maxHp: live ? live.combatant.maxHp : def.maxHp,
+      };
     });
 
     const activeSpells = run.activeSpells.map((owned) => {
@@ -622,21 +689,28 @@ export class CombatScene extends Phaser.Scene {
       return { id: owned.id, name: def.name, rarity: def.rarity, count: owned.count };
     });
 
+    // The HUD tracks the enemy the party is actually hitting; a group is summarised as a count
+    // beside its name rather than by stacking three more health bars into the panel.
+    const focus = primaryMonster(combat) ?? combat.monsters[0];
+    const livingMonsters = combat.monsters.filter((monster) => monster.hp > 0).length;
+
     useRunStore.getState().setSnapshot({
       waveNumber: run.waveNumber,
       zoneName: run.zoneName,
       heroClassName: this.heroClassName,
       heroElement: combat.hero.element,
-      monsterElement: combat.monster.element,
-      monsterName: combat.monster.name,
+      monsterElement: focus?.element,
+      monsterName: focus?.name ?? '',
       monsterTier: run.monsterTier,
       isEcho: run.isEcho,
       monsterAffix: run.monsterAffix,
       echoRecord: run.echoRecord,
       burstGauge: combat.burstGauge,
       burstArmed: combat.burstArmed,
-      monsterHp: combat.monster.hp,
-      monsterMaxHp: combat.monster.maxHp,
+      monsterHp: focus?.hp ?? 0,
+      monsterMaxHp: focus?.maxHp ?? 0,
+      monsterCount: combat.monsters.length,
+      monstersRemaining: livingMonsters,
       heroLevel: run.heroProgress.level,
       heroXp: run.heroProgress.xp,
       heroXpToNext: xpForNextLevel(run.heroProgress.level),

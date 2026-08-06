@@ -54,6 +54,9 @@ export interface RunSnapshot {
   burstArmed: boolean;
   monsterHp: number;
   monsterMaxHp: number;
+  /** How many enemies this wave spawned, and how many are still standing. */
+  monsterCount: number;
+  monstersRemaining: number;
   heroLevel: number;
   heroXp: number;
   heroXpToNext: number;
@@ -105,6 +108,8 @@ const initialSnapshot: RunSnapshot = {
   burstArmed: false,
   monsterHp: 0,
   monsterMaxHp: 0,
+  monsterCount: 1,
+  monstersRemaining: 1,
   heroLevel: 1,
   heroXp: 0,
   heroXpToNext: 0,

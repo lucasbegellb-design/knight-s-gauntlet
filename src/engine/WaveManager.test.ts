@@ -198,8 +198,8 @@ describe('WaveManager', () => {
 
     const combat = manager.getCombatState();
     // 90% of the hero's own effective HP/attack for that wave (ECHO_POWER_FRACTION), not a bestiary stat block.
-    expect(combat.monster.maxHp).toBe(Math.round(combat.hero.maxHp * 0.9));
-    expect(combat.monster.attack).toBe(Math.round(combat.hero.attack * 0.9));
+    expect(combat.monsters[0]!.maxHp).toBe(Math.round(combat.hero.maxHp * 0.9));
+    expect(combat.monsters[0]!.attack).toBe(Math.round(combat.hero.attack * 0.9));
   });
 
   it('ends the run and stops ticking once the hero dies (without Phoenix Heart)', () => {

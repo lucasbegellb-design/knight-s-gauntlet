@@ -147,6 +147,16 @@ export function Hud() {
               {state.monsterAffix.name.toUpperCase()}
             </div>
           )}
+          {state.monsterCount > 1 && (
+            <div className="pack-badge" title={`${state.monstersRemaining} of ${state.monsterCount} still standing`}>
+              {Array.from({ length: state.monsterCount }, (_, i) => (
+                <span key={i} className={`pack-pip ${i < state.monstersRemaining ? 'pack-pip-alive' : ''}`} />
+              ))}
+              <span className="pack-badge-label">
+                {state.monstersRemaining}/{state.monsterCount}
+              </span>
+            </div>
+          )}
           <div className="hud-sublabel">
             {state.monsterName} <ElementBadge element={state.monsterElement} compact />
             <AffinityCallout attacker={state.heroElement} defender={state.monsterElement} />
