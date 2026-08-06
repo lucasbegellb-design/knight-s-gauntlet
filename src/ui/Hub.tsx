@@ -356,7 +356,7 @@ export function Hub() {
 
       <div className="hud-row hub-tab-row">
         {TABS.map((t) => (
-          <button key={t} type="button" className={`speed-button${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
+          <button key={t} type="button" className={`hub-tab-button${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
             <span className="tab-icon">{TAB_ICON[t]}</span> {TAB_LABEL[t]}
           </button>
         ))}
