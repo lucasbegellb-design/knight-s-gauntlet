@@ -23,13 +23,6 @@ on:
       - 'claude/game-improvement-plan-a3e41j'
   workflow_dispatch:
 
-# GitHub Pages allows exactly one deployment in flight per site. Without this, two pushes close
-# together race and the second dies with "Deployment request failed ... due to in progress
-# deployment" — a red run caused purely by timing, with nothing wrong in the commit. Queue instead
-# of cancelling so the newest push is always the one that ends up published.
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   build:
@@ -67,6 +60,26 @@ jobs:
 
   deploy:
     needs: build
+    # Only the default branch publishes.
+    #
+    # The `github-pages` environment restricts deployments to the default branch — GitHub's
+    # standard behaviour when the Pages source is "GitHub Actions". A deploy job started from any
+    # other branch does not fail: it sits waiting for an environment approval that never arrives,
+    # holds the one in-flight Pages deployment slot, and makes every subsequent run fail with
+    # "due to in progress deployment". That is what happened here — a stuck job from a feature
+    # branch turned three later runs red for reasons that had nothing to do with their commits.
+    #
+    # So development branches run lint, tests and the production build (real PR signal, and the
+    # build still has to compile), and publishing happens when the pull request merges.
+    if: github.ref == 'refs/heads/claude/knights-gauntlet-idle-rpg-0aiorv'
+    # Pages allows one deployment in flight per site, so overlapping publishes collide with
+    # "Deployment request failed ... due to in progress deployment". Scoped to this job rather
+    # than the whole workflow so a development branch's lint/test/build never queues behind a
+    # publish it isn't going to perform anyway. Queue rather than cancel, so the newest push is
+    # the one that ends up live.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       pages: write
