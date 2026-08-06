@@ -1,157 +1,96 @@
 # Knight's Gauntlet — project context
 
-Idle-RPG roguelike (Balatro-style relic combos + Enter the Gungeon-style loot rarity, FF Brave Exvius art direction). Full original spec was an 8-phase build plan; **all 8 phases are implemented and shippable.** This file exists so a fresh session can resume work without re-deriving context. Full decision-by-decision history (why each choice was made) is in `DESIGN_NOTES.md` — read that before changing existing architecture, not just this summary.
+Idle-RPG roguelike. Balatro-style relic combos, Brave Frontier's elements/squad/Brave Burst,
+Gungeon-style loot rarity, FF Brave Exvius art direction, Ankama-style single cosmology.
+
+**This file is injected into every session's context, so it stays short on purpose.** It answers
+"what is this, where do I look, what will bite me". The *why* behind every design decision lives in
+`DESIGN_NOTES.md`, read on demand. Do not grow this file back into a changelog.
+
+| Need | Read |
+|---|---|
+| Why a system works the way it does | `DESIGN_NOTES.md` |
+| The cosmology, and the writing rules for any player-facing text | `LORE.md` |
+| Where the design is heading, and the research behind it | `ROADMAP.md` |
+| How to work here without burning tokens | `CONTRIBUTING_AGENT.md` — **read this first** |
 
 ## Branch
 
-Work happens on `claude/game-improvement-plan-a3e41j`. Push there, not `main`.
-
-## Major update (this session) — read `ROADMAP.md` and `LORE.md` first
-
-The 8-phase build is done; a second, larger pass reworked the game's *design*
-rather than its content count. Six chantiers, each committed separately:
-
-1. **Elemental affinity** (`src/engine/elements.ts`) — Brave Frontier's six-element
-   wheel, the only multiplicative term applied before the modifier pipeline. All 19
-   monsters / 11 companions / 4 classes tagged. Multipliers are 1.35/0.75, not BF's
-   1.5/0.5 — measured, see the module comment.
-2. **Conditional/multiplicative modifiers** (`src/engine/conditionals.ts`) — the combo
-   layer. `ModifierCondition` predicates + `damageMultiplier` that composes as a
-   *product* across relics. `comboPack.ts` has 15 relics authored for it. The flat
-   `${kind}Sum` pipeline is untouched and still carries every older relic.
-3. **Squad + leader skills + Brave Burst** — pre-run squad selection (`SquadSelect.tsx`),
-   a party-wide leader skill, and a party gauge that arms rather than fires, giving the
-   idle loop its one optional player input.
-4. **Monster traits + wave affixes** (`src/data/affixes.ts`, `src/engine/affixes.ts`) —
-   8 rolled prefixes and a monster-owned trait vocabulary. Deliberately *not* routed
-   through `AggregatedModifiers`; the Phase 3 boundary still holds.
-5. **Echo ladder** — beating an Echo records the build; past wave 30 those records come
-   back as Echoes. The Echo now also fights with the hero's crit/lifesteal profile, via
-   the traits channel.
-6. **Audio + feel + perf** — `src/audio/sfx.ts` synthesises every sound with Web Audio
-   (no assets). Phaser is dynamically imported (initial payload ~1.7MB → ~330KB) and the
-   HUD snapshot is throttled to 66ms instead of running every frame.
-
-Plus **the voice pass**: `LORE.md` is the single cosmology everything now hangs off
-(classes are devotions to one of six Ardeurs), relics and monsters carry a `flavor`
-field kept strictly separate from mechanical `description`, and `src/data/voice.test.ts`
-guards the writing rules.
-
-`CONTRIBUTING_AGENT.md` documents the token/resource protocol used to do all this —
-follow it.
-
-## Stack
-
-Vite + React + TS (HUD/HUB/menus, Cinzel+Manrope fonts via Google Fonts, dark/gold/arcane-purple **gilded-chrome** theme in `src/index.css` — ornate gold-bevel panel borders, corner gem accents, gradient-underlined section titles, a segmented tab strip, and sheen-highlighted buttons, all CSS-only, no new art) · Phaser 4 (`CombatScene`, real sprites + tween-based hit/death/spawn animations) · Zustand (`runStore` per-run, `metaStore` persistent, kept strictly separate) · `idb-keyval` (meta persistence) · Vitest (engine logic only, **206 tests**, including a `balanceSim.test.ts` harness that now runs per class and compares solo vs. led-squad runs, printing its numbers on every run).
+Work on `claude/game-improvement-plan-a3e41j`. Never push to the default branch directly.
+The default branch is **`claude/knights-gauntlet-idle-rpg-0aiorv`** — there is no `main`, despite
+the name looking like a feature branch. Pull requests target it.
 
 ## Commands
 
 ```
 npm run dev / test / build / lint
-node scripts/asset-gen/generate.mjs --skip-horde --only=<id1,id2>       # generate more sprites (see below)
-node scripts/asset-gen/removeBackground.mjs [hero monsters companions] # strip studio backgrounds off whatever's on disk (see below)
+node scripts/agent/verify.mjs          # lint + typecheck + test + build, compact, stops at first failure
+node scripts/agent/map.mjs [area]      # generated symbol map — use instead of grepping for a definition
+node scripts/agent/ci.mjs [--log]      # workflow runs + GitHub status in one call
+npx vitest run src/engine/balanceSim.test.ts   # prints the balance numbers
+node scripts/asset-gen/generate.mjs --only=<id>        # generate sprites
+node scripts/asset-gen/removeBackground.mjs <dirs>     # strip studio backgrounds
 ```
 
-## Architecture (read `src/engine/*` before touching combat rules)
+**`npx tsc --noEmit` checks nothing here.** The root tsconfig is `{ files: [], references: [...] }`,
+so it exits 0 on a broken tree. Only `tsc -b` typechecks. `verify.mjs` gets this right.
 
-- `src/engine/` — pure logic, **zero Phaser/React/Zustand imports**, fully unit-tested. `CombatEngine` (hero+allies+spells vs monster, tick-based — the attack/crit/burn/lifesteal/execute/reflect pipeline is now genuinely **party-wide**: `partyModifiers` applies to the hero's attacks and every non-healer ally's attacks alike, not just the hero's), `WaveManager` (sequences waves, XP, loot pauses, meta bonuses, zone-filtered monster pool, Broken Parts drops, gacha-unlock-filtered companion loot, the dynamic **Broken Blade** modifier source, `abandonRun()` — voluntary run-end reusing the same `runOver`/currency-deposit path as death, companion attack/heal output now **level-scaled** alongside the existing rank-bonus so companions keep pace with the wave curve instead of staying flat, and the **Echo of Yourself** milestone mirror-encounter — see the Echo section below), `modifiers.ts` (declarative `RelicModifier` vocabulary shared by relics/equipment/passive spells/talents/**classes**/**the forge weapon**/**companion attacks**), `loot.ts`, `talents.ts`, `brokenParts.ts` (`rollBrokenParts` per-tier drop table, now including **megaboss**/**ultraboss**), `gacha.ts` (`pullGacha`/`pullGachaMulti` — rarity-weighted character summons), `idleEssence.ts` (`pendingIdleEssence` — pure function of two timestamps, capped offline-progress accrual), `heroProgression.ts` (`statsForLevel` + `scaleHeroDefinition` for class stat multipliers), `waveScaling.ts` (`tierForWave` + `zoneForWave`/`monsterPoolForWave`; `scaledMonsterStats` now layers an **era-compounding escalation multiplier** on top of the linear curve past wave 100 — a complete no-op below wave 100, so it guarantees any run eventually hits a wall without touching the tuned early game), `balanceSim.test.ts` (committed naive-strategy survival-rate harness, not just an ad hoc script — see Known gaps), `kingdom.ts` (`resolveKingdomModifiers`/`treasuryUpgradeCost` — the Kingdom system's pure logic, same "data defines content, engine resolves to a flat modifier list" pattern as talents/forge weapon).
-- `src/data/` — all content as typed registries (`Registry<T>` from `registry.ts`). Bulk content (Phase 6+) is grouped into per-family files (e.g. `relics/firePack.ts`), not one-file-per-entry like the original Phase 3 relics — both patterns coexist, see DESIGN_NOTES. `src/data/classes/` = the 4 playable classes (`ClassDefinition`: stat multiplier + innate `RelicModifier`s + starting-weapon pool + a now-neutral hero `tint` — see Assets section for why). `src/data/kingdom/` = `territories.ts` (6 one-time-conquest territories) + `lords.ts` (6 one-time-recruit allied lords), each a flat `{id, name, description, cost, modifiers}` shape (lords also carry a `title`) — the post-max-level essence sink, see the Kingdom section below. `src/data/zones.ts` = the 4 map zones (`ZoneDefinition`: wave range, monster subset, background color) that `zoneForWave` picks from — the last zone is endless. `src/data/continents.ts` = 2 `ContinentDefinition`s (The Sundered Isles, The Ashen Reaches), each grouping 2 existing zones + lore text — purely presentational (World tab, continent-transition banners), doesn't touch wave scaling. `src/data/forgeWeapon.ts` = the single meta-persistent Forge Weapon (`resolveForgeWeaponModifiers(level)`, `forgeWeaponUpgradeCost(level)`) — not a registry, just one constant + a level curve. `src/data/companions/` now has 11 entries (`iron_vanguard` rare tank, `hearthkeeper` epic healer, `warlords_aegis` legendary support added this session to fill role/rarity gaps) — `allCompanions` is the full gacha pool, `STARTER_COMPANION_IDS` (the two commons) are unlocked from a fresh save with no pulls needed. `src/data/relics/brokenBlade.ts` = the legendary **Broken Blade** relic (`special: 'brokenBladeDamage'`), the flagship relic proving out the party-wide modifier pipeline — its `damageMultiplier` scales with the run's live Broken Parts total (see `WaveManager.computeModifiers`), separate from the meta-persistent Broken Parts currency that funds the Forge Weapon.
-- `src/scenes/CombatScene.ts` — the only place that bridges `WaveManager` to rendering, styled to read closer to FF Brave Exvius: party formation (hero front + up to 3 allies staggered behind in `COMPANION_SLOTS`, single enemy front-right), soft ground-shadow ellipse under every unit, and a continuous idle-bob tween while standing. Renders real sprites via `preload()`/`textures.exists()` check, falls back to colored rectangles per-unit if no art exists yet; sprites are **contain-fit** (not stretched) to their tier's bounding box so real aspect ratio is preserved. Applies the chosen class's own hero sprite (`heroTextureKey(classDef.id)`, one distinct texture per class — no longer a single shared portrait recolored via tint) + stat-scaled `HeroDefinition` + rolled starting weapon at `startNewRun()`. Zone background is set on run start and on every zone transition. Combat presentation is now ATB-flavored: each `UnitView` renders a yellow gauge under its HP bar that fills from the engine's own already-per-unit `nextAttackAt`/`attackIntervalMs` timers (`atbProgress()`/`updateAtbBar()`) — no engine change needed, the tick-based simultaneous-timer combat *is* an ATB system, it just wasn't visualized before. Attacks now choreograph as a real hit-stop beat: attacker lunges (`attackLunge`), and only once the lunge lands (after `ATTACK_LUNGE_OUT_MS`, via `time.delayedCall`) does `hitImpact()` fire together — flinch shake, a white `setTintFill`-style flash (Phaser 4 needs `setTint().setTintMode(FILL)`, restored via `UnitView.restTint` afterward, not `clearTint()`, or a hero's class tint gets wiped), an expanding hit-spark ring (`spawnImpactBurst`), a `cameras.main.shake()` (bigger on crit), and a bold outlined pop-in damage number (`showDamageNumber`) — plain `attack` events didn't show a damage number at all before this pass. Deaths stop the idle-bob and play a one-shot shrink/fade/tilt (`deathAnimation`) instead of a static alpha snap.
-- `src/store/` — `runStore` (HUD snapshot, pushed every tick from CombatScene, includes `brokenParts`/`zoneName`/`heroClassName`) vs `metaStore` (talents/forge/companion upgrades/discoveries/currency/`brokenParts`/`forgeWeaponLevel`/`unlockedCompanionIds`/`lastGachaResults`/`lastEssenceCollectionAt`, persisted via idb-keyval — `lastGachaResults` is the one transient exception, cleared by `clearGachaResults()`; also holds the **transient, unpersisted** `selectedClassId`/`startingWeapon` set by `chooseClass()`). Engine never imports either store directly — `WaveManager` takes a plain `MetaBonuses` object (now including `classModifiers` + `forgeWeaponModifiers`) plus an optional starting-equipment param and an `unlockedCompanionIds` iterable as constructor args; `CombatScene` is the glue that reads `metaStore` and builds them.
-- `src/ui/Hub.tsx` — the Camp screen (Talents/Forge/Gacha/Companions/**Kingdom**/Grimoire/World tabs; Forge tab has two cards side by side: the original equipment-power Forge Level, and the Forge Weapon leveled with Broken Parts). `src/ui/GachaTab.tsx` (pull x1/x10 + roster grid with locked `???` silhouettes) and `src/ui/GachaReveal.tsx` (full-screen pull-result overlay, `position: fixed` since Hub isn't a fixed-size canvas like the combat screen) implement the summon system. `src/ui/KingdomTab.tsx` is the post-max-level essence sink UI (Royal Treasury ranked upgrade + Territories/Allied Lords one-time-purchase grids), reusing the existing `hub-panel-grid`/`hub-card`/`hub-row-item`/`hub-buy-button` CSS — no new CSS system. `src/ui/WorldTab.tsx` renders `allContinents`/lore as a static compendium (no fog-of-war/discovery-gating — deliberately simple). `src/ui/IdleEssenceBanner.tsx` sits above the Hub's tab row on every tab, ticking a live preview of accrued idle essence every second (`pendingIdleEssence` is pure/cheap so this is just a `setInterval` re-render, no store write until "Collect" is clicked). `src/ui/ClassSelect.tsx` is the class-pick screen between Camp and a run. Screen flow is `hub → classSelect → run`; `<PhaserGame>` only mounts when `screen === 'run'`.
+## Stack
+
+Vite · React + TS (HUD, Camp, menus) · Phaser 4 (`CombatScene`, dynamically imported so the initial
+payload is ~330KB not ~1.7MB) · Zustand (`runStore` per-run vs `metaStore` persistent — kept
+strictly separate) · `idb-keyval` · Vitest (**246 tests**, engine logic only).
+
+## Architecture in one paragraph
+
+`src/engine/` is pure logic with **zero Phaser/React/Zustand imports** and is where combat rules
+live — change them there, not in the scene. `CombatEngine` resolves one wave (party vs an ordered
+`monsters[]`); `WaveManager` sequences the run, owns loot/XP/affixes/Echo, and is the only thing
+that talks to both the engine and the data registries. `src/data/` is typed registries. The scene
+(`src/scenes/CombatScene.ts`) only renders and forwards events; the stores only hold state.
+**Run `node scripts/agent/map.mjs` for every exported symbol and its line number** rather than
+grepping — that is what it is for.
+
+Three boundaries that are load-bearing:
+1. Monsters never read `AggregatedModifiers`. Enemy rules go in `MonsterTraits` (`data/affixes.ts`).
+2. Flat stat bonuses go in the additive `${kind}Sum` pipeline; anything conditional or
+   multiplicative goes in `engine/conditionals.ts`. Do not mix them.
+3. Prestige sells **rule changes, never stat bonuses** (`engine/prestige.ts`). A test enforces it.
 
 ## Current content
 
-61 relics (60 + the new **Broken Blade**, legendary) · 12 equipment · 19 monsters (10 normal/3 miniboss/3 boss/**2 megaboss/1 ultraboss**) · **11 companions** (gacha pool: 2 common starters + 3 rare + 3 epic + 2 legendary + 1 mythic) · 8 spells · 11 talents · 4 classes (Knight/Berserker/Guardian/Duelist, **each with its own generated hero sprite**) · 2 continents × 2 zones each (Sundered Isles: Greenwood Fringe → Bonefields; Ashen Reaches: Cinder Wastes → Wyrm's Reach, waves 1-10/11-20/21-30/31+) · 1 Forge Weapon (10 levels, funded by Broken Parts dropped by monsters — normal 35% chance for 1-2, miniboss 75% for 2-4, boss guaranteed 3-6, megaboss guaranteed 6-10, ultraboss guaranteed 15-25) · **megaboss every 100 waves / ultraboss every 1000 waves**, on top of an escalating late-game difficulty curve (see waveScaling.ts) so very long runs are guaranteed to eventually end · **Echo of Yourself every 15 waves** — a mirror encounter built from the hero's own current effective stats instead of a bestiary monster (see the Echo section below) · **Kingdom** (6 territories + 6 allied lords, one-time purchase each, + a 50-rank Royal Treasury) as the post-max-level essence sink.
+76 relics · 12 equipment · 19 monsters · 11 companions · 8 spells · 11 talents · 4 classes ·
+6 elements · 8 wave affixes · 6 sigil upgrades · 2 continents × 2 zones · 1 Forge Weapon.
 
-## Idle essence
+## Balance state
 
-Classic idle-game offline-progress trickle, deliberately simple: `src/engine/idleEssence.ts` exports one pure function, `pendingIdleEssence(lastCollectionAt, now)`, computing `IDLE_ESSENCE_PER_HOUR` (60) accrued since the timestamp, capped at `IDLE_ESSENCE_CAP_HOURS` (8h → 480 essence) so leaving the game open/closed for days isn't strictly better than checking in regularly. It's wall-clock based, not tied to any running loop, so it accrues identically whether the tab is open on the Hub, on a run, or closed entirely — `metaStore.collectIdleEssence()` is the only thing that actually mutates state (deposits the pending amount, resets `lastEssenceCollectionAt`), called from the `IdleEssenceBanner`'s Collect button. A fresh save (or any save predating this feature) initializes the timestamp to `Date.now()` at load — no retroactive "free essence for years of clock time" bug.
-
-## Ending a run
-
-Two ways a run ends, both going through the same `runOver` event / currency-deposit path in `CombatScene` (`depositCurrency`/`depositBrokenParts`), distinguished only by `RunState.endReason` for UI copy: dying (`endReason: 'death'`, set implicitly — the default) or voluntarily fleeing via the Hud's **Flee** button (`WaveManager.abandonRun()`, sets `endReason: 'abandoned'`). Fleeing banks whatever gold/Broken Parts the run has earned so far, exactly like a normal death — there's no penalty beyond not being able to keep playing that run. This exists because runs are otherwise effectively endless (see the escalation curve above) and there was previously no way to stop one short of closing the tab.
-
-## Echo of Yourself
-
-The one encounter in the game that isn't external bestiary content — every `ECHO_WAVE_INTERVAL`=15 waves, `WaveManager.buildWaveEngine()` replaces the wave's monster with a mirror built from the hero's own current effective stats (level + gear + relic/talent/class/forge/kingdom modifiers already baked in — the exact numbers the hero itself fights with that wave), scaled to `ECHO_POWER_FRACTION`=90% so it's a genuine fight, not an unwinnable wall. A pure glass-cannon build with no HP/lifesteal investment gets punished by exactly that weakness reflected back — the difficulty is a direct readout of the player's own choices instead of a fixed stat block. Deliberately does **not** give the Echo the hero's crit/burn/lifesteal rolls — monsters never consulting modifiers is a Phase 3 architectural decision kept intact here; a flat mirror of the raw hp/attack/speed numbers is already tense without touching that boundary. `RunState.isEcho` (surfaced through the `waveStarted` event and `runStore`) drives a purple "ECHO" HUD badge and a `CombatScene` visual: the "monster" wears the hero's own class sprite (tinted `ECHO_TINT`) instead of a bestiary texture, since there's no dedicated Echo art. Can coincide with a miniboss/boss/megaboss wave — Echo wins that wave; the tier is kept only for reward-table lookups (Broken Parts drop chance, `currentMonsterDef()`'s synthesized `xpReward` via `ECHO_XP_REWARD_BY_TIER`), not for its actual stats. Tested directly in `WaveManager.test.ts` (`buildWaveEngine(15)` and asserting the monster's stats equal 90% of the hero's own).
-
-## Kingdom (post-max-level essence sink)
-
-Once Forge level, companion ranks, and the talent tree are all maxed, essence (the one meta currency with no hard ceiling) had nothing left to spend on — the Kingdom tab is that sink. Three parts, all in `src/data/kingdom/` + `src/engine/kingdom.ts`, wired into `MetaBonuses.kingdomModifiers` exactly like `classModifiers`/`forgeWeaponModifiers` (`WaveManager.computeModifiers()`): **Territories** (6, one-time conquest each, escalating flat essence cost 500→25,000, permanent stat bonus) and **Allied Lords** (6, same one-time-purchase shape, generals/advisors recruited to your court — deliberately a military/political-ally framing) are finite collection goals; **Royal Treasury** (`treasuryUpgradeCost`, reuses `costForRank` from `talents.ts`, capped at level 50) is the actual "still something to spend on forever" answer, +0.5% gold/+0.5% XP per rank. `resolveKingdomModifiers()` is pure and framework-free, tested in `kingdom.test.ts`; `balanceSim.test.ts` is unaffected since it runs with `DEFAULT_META_BONUSES` (`kingdomModifiers: []`), same as it already was for Forge/talents. Territories/lords now have generated art too (`GeneratedPortrait category="territories"|"lords"` in `KingdomTab`) — see Assets section.
-
-## Gacha
-
-Brave-Frontier-style character summon, layered on top of the existing companion system rather than a separate content type — `CompanionDefinition` already had `rarity`, so gacha "characters" *are* companions. Two starter companions (`STARTER_COMPANION_IDS`, both common) are unlocked on a fresh save; the other 9 must be pulled. Pulling costs essence (`GACHA_SINGLE_PULL_COST`=120, `GACHA_MULTI_PULL_COST`=1000 for x10) and rolls via `GACHA_RARITY_WEIGHTS` in `src/engine/gacha.ts` (more generous toward rare+ than in-run loot's `RARITY_DROP_WEIGHTS`, since a pull spends real currency). **Duplicates aren't wasted once the roster's complete**: a duplicate pull refunds 30% of a single pull's cost as essence *and* grants that companion **Ascension Shards** (`ASCENSION_SHARD_YIELD` in `metaStore.ts`, rarity-scaled 1→8) — shards spend (`ascendCompanion`, `KingdomTab`-style afford-and-spend in `metaStore.ts`) to raise that companion's rank cap by +1 per ascension level, up to `MAX_ASCENSION_LEVEL`=20 (so effective max rank 25, not the base 5). `upgradeCompanion`'s cap check reads `companionMaxRank(ascensionLevel)` instead of the old fixed constant — zero `WaveManager`/`CombatEngine` changes needed, since the existing `COMPANION_RANK_BONUS_PER_LEVEL` formula already scales unboundedly with whatever rank a companion has; the cap was always purely a `metaStore`-side gate. This is *why* the Gacha still matters after full unlock: duplicates are no longer just filler, they're the only way to keep growing a companion's power past the old 40% ceiling. **Unlocking is still the initial gate**: `WaveManager`'s `LootContext.unlockedCompanionIds` (threaded from `metaStore.unlockedCompanionIds` via `CombatScene`) means a companion can only appear as in-run loot *after* it's been summoned at least once. **Pity**: `metaStore.gachaPity` (`GachaPityState { pullsSinceRare, pullsSinceLegendary }`) tracks each streak across every pull, single or x10 alike — `engine/gacha.ts`'s `pullGacha`/`pullGachaMulti` take it as an optional 4th param and force the roll up to rare+ once `pullsSinceRare` reaches `RARE_PITY_THRESHOLD`=10, or up to legendary+ once `pullsSinceLegendary` reaches `LEGENDARY_PITY_THRESHOLD`=50 (`nextPityState()` folds the *actual received* rarity, not the forced target, into the next state — so a forced-rare roll that fell back to a common-only candidate pool correctly doesn't reset the counter). Both existing functions kept their old signature/return shape (pity is opt-in via a defaulted param), so no caller besides `metaStore` needed to change and none of the pre-existing `gacha.test.ts` cases needed updating. `GachaTab` shows the live streak so a bad run of pulls visibly builds toward a guarantee instead of feeling like pure bad luck.
-
-## Assets — what's real vs placeholder
-
-- **Real AI-generated art (AI Horde + Pollinations.ai):** **4 hero sprites, one per class** (`public/game-assets/hero/<classId>.png` — Knight/Berserker/Guardian/Duelist each has its own distinct art now, not one shared portrait recolored via `tint`), all 19 monsters (including the megaboss/ultraboss trio), 5 rarity icons, and **all 11 gacha companions with two art styles each** — a menu illustration (`public/game-assets/companions_illustration/<id>.png`, `ILLUSTRATION_STYLE` in generate.mjs: painterly Brave-Frontier-esque splash art, used by `GachaTab`/`GachaReveal`/the Companions tab) and a distinct combat sprite (`public/game-assets/companions/<id>.png`, `PIXEL_ART_STYLE`: retro pixel-art, loaded by `CombatScene` exactly like hero/monster textures). `manifest.mjs` entries carry an optional `style: 'illustration' | 'pixelArt'` field that picks the suffix in `generate.mjs`; entries with no `style` (hero/monsters/icons) keep the original `CHIBI_STYLE` suffix unchanged. Backgrounds are **actually transparent** via `scripts/asset-gen/removeBackground.mjs` (uses `sharp`, a devDependency). The script: (1) flood-fills from the border through connected *near-white* pixels only (deliberately conservative — a looser "any neutral gradient tone" version was tried and rejected because it ate into grayscale subjects like the skeleton and left ragged holes); (2) trims the resulting transparent margin so the subject fills its bounding box instead of floating in a mostly-empty 512×512 canvas; (3) for backdrops that aren't near-white (skeleton, frost_lich, ancient_wyrm, bat, goblin_grunt, and most of the moodier gacha illustrations — colored/gradient scenes the flood fill can't safely touch), falls back to a soft **corner vignette** (radial alpha fade) so they still blend into the dark UI instead of showing a hard-edged box; (4) removes isolated near-white "floor shadow" blobs (a puddle-shaped patch under the character's feet, disconnected from the border) that would otherwise float oddly once the surrounding background goes transparent. Re-run it any time new art is generated — it's idempotent. One or two sprites (e.g. wolf) still keep a faint shadow smudge; that was a deliberate stop-point rather than risk corrupting a subject with a more aggressive pass.
-- **Kingdom art**: all 6 territories (`public/game-assets/territories/<id>.png`, new `landscape` style — painted environment/banner art, no background removal since it's a full-bleed scene) and all 6 allied lords (`public/game-assets/lords/<id>.png`, `illustration` style + background-removed like companion illustrations), rendered via `GeneratedPortrait` in `KingdomTab`.
-- **Zone backdrops**: all 4 zones (`public/game-assets/zones/<id>.png`, `landscape` style, no background removal). `CombatScene` loads them in `preload()` and renders a full-canvas `Image` (depth -1000) + a semi-transparent dark scrim (depth -999) behind every unit/HP-bar in `applyZoneBackground()`, so combat UI stays readable against busy painted art; `cameras.main.setBackgroundColor()` stays the always-on solid-color fallback if a zone's art is ever missing.
-- **Attack frames**: every hero class, monster, and companion combat sprite now has a second frame (`<id>_attack.png` alongside the existing idle `<id>.png`), swapped in by `CombatScene`'s `attackLunge()` during the existing lunge-out/lunge-back choreography (`swapUnitFrame()`/`applyContainFit()`) and swapped back to idle once the lunge returns home — real, visible attack poses instead of tween-only "juice." `manifest.mjs`'s `attackFrameManifest` is derived programmatically from every hero/monsters/companions entry (`frame: 'attack'`), so it never drifts out of sync as roster content is added; `generate.mjs`'s `outputPath()`/`buildPrompt()` are `frame`-aware (adds an action-pose prompt fragment, `_attack` suffix on the output path). **img2img was tried first** (source_image + source_processing, anchoring the attack frame to its idle portrait for character consistency) and abandoned after empirical testing: at `denoising_strength` 0.55/0.8/0.95 the anonymous AI Horde tier consistently returned a near-pixel-identical copy of the source pose regardless of the value sent — it doesn't appear to honor the parameter on the free/anonymous queue. Shipped as plain txt2img instead, which reliably produces a real, different pose; character consistency between a unit's idle and attack frame is "close, not exact" — the same tradeoff already accepted for companions' two independently-generated illustration/pixelArt styles. Units without an attack frame (or whose art hasn't been generated yet) fall back to the plain idle-only tween animation with no code changes needed — `swapUnitFrame()` is a no-op when the texture doesn't exist. **34/34 units now have an attack frame** (all 4 hero classes, all 19 monsters, all 11 companions). Two stragglers took extra passes: `iron_vanguard_attack` failed AI Horde 3 times in a row (provider outage) before a later retry succeeded via the Pollinations fallback; `roguish_blade_attack`'s first successful generation was flagged by AI Horde's own safety classifier as potential CSAM and returned a placeholder "blocked" image instead of art — almost certainly a false positive given the prompt (a hooded rogue with twin daggers, no age/content signal whatsoever); that file was deleted immediately without retrying the identical prompt, and a later attempt with the same prompt succeeded cleanly via Pollinations instead.
-- Pipeline: `scripts/asset-gen/generate.mjs` (AI Horde primary + Pollinations fallback, resumable — skips ids already on disk). **Known gotchas:** (1) Pollinations 429s if you don't pace every request (success or failure) — the delay must be unconditional, not just after successes; script already does this correctly. (2) Pollinations can also fail with **HTTP 500 / "Insufficient balance... PAYMENT_REQUIRED"** on their internal "sana" backend — an anonymous-tier quota issue on their end, confirmed via direct `curl` testing, unrelated to prompt/params. **When this happens, drop `--skip-horde` and let AI Horde (the actual primary provider, already fully implemented) carry the batch instead** — it's a genuinely separate free/anonymous community SD cluster with no shared quota with Pollinations, just slower (polling-based, up to ~90s/job vs. Pollinations' synchronous response). This is exactly what resolved a full Pollinations outage this session: 9/9 assets that failed twice via Pollinations-only succeeded on the first AI Horde attempt. A `&model=flux` param was tried on the Pollinations path as a possible workaround and reverted — Pollinations ignores it and always routes through "sana" regardless, so it had no verified effect. `CHIBI_STYLE`/`ILLUSTRATION_STYLE`/`PIXEL_ART_STYLE` were tightened this session to lean more explicitly into Brave Frontier's actual look (saturated anime-chibi, bold line art, rim lighting) — applies to both providers. To add a new gacha character: add both a `companions_illustration` and a `companions` manifest entry (same id, `style: 'illustration'`/`'pixelArt'`), run `generate.mjs --only=<id>` (AI Horde primary by default — only pass `--skip-horde` if you specifically want the faster-but-currently-flaky Pollinations path), run `removeBackground.mjs companions companions_illustration`, add the `CompanionDefinition` to `src/data/companions/` — no CombatScene/Gacha UI changes needed, everything else is id-driven.
+Measured, `npx vitest run src/engine/balanceSim.test.ts`. Naive always-pick-option-0, 100 seeds per
+class. **Solo 78-92/100** past wave 10 (median death w20-35), **led squad 100/100** (median w25-40).
+`balanceSim` asserts two things: a survival floor of 40/100, and that a led squad beats solo on
+*every* class — the floor only catches regressions downward, the invariant catches a buff going too
+far.
 
 ## GitHub Pages
 
-Fixed. Single canonical workflow: `.github/workflows/main.yml` (do not re-add `static.yml` or a second Pages workflow — a prior session had 3 competing ones racing each other, which was the original blank-page bug). `vite.config.ts` uses `base: '/knight-s-gauntlet/'` (this exact repo name — don't change unless the repo is renamed). Runtime `game-assets/...` image paths in `src/ui/RarityIcon.tsx` are intentionally relative (no leading `/`) since literal strings ignore Vite's `base` config.
+Single workflow, `.github/workflows/main.yml`. Runs on `pull_request` (CI for any branch, no list to
+maintain) and on `push` to the default branch (which publishes). `vite.config.ts` needs
+`base: '/knight-s-gauntlet/'`. Runtime `game-assets/...` paths in `RarityIcon.tsx` are deliberately
+relative — literal strings ignore Vite's `base`.
 
-**This repo's default branch is `claude/knights-gauntlet-idle-rpg-0aiorv`** — there is no `main`,
-despite the name looking like a feature branch. Pull requests target it, and pushing to it is what
-publishes.
+**When a deploy hangs:** `actions/deploy-pages` creating the deployment then polling
+`deployment_in_progress` to its 10-minute timeout is a **GitHub-side stall**, not a repo problem.
+Check `node scripts/agent/ci.mjs` for a Pages incident before touching the workflow. A stuck deploy
+also holds the single in-flight Pages slot, so later runs fail with "due to in progress deployment"
+naming the stuck SHA — cancel the stuck run to unblock the queue.
 
-The workflow used to gate on an explicit `on.push.branches` allowlist, which cost a whole session's
-deploys: a development branch missing from the list got **no CI and no deploy and no error** —
-every push succeeded, the workflow simply never ran, and the live site stayed on whatever the
-default branch last built. That shape is gone. It now runs on `pull_request` (so every PR gets CI
-regardless of branch name) and on `push` to the default branch (which publishes), with the deploy
-job gated on the event type. **Nothing to add when you start a branch, nothing to remove when it
-merges.** The deploy is behind `npm run lint` and `npm test`, so a red build cannot publish.
+## Known gaps
 
-**When a Pages deploy hangs:** `actions/deploy-pages` creating the deployment and then polling
-`deployment_in_progress` until its 10-minute timeout is a *GitHub-side* stall, not a repo problem —
-check https://www.githubstatus.com for a Pages incident before changing anything here. A stuck
-deploy also holds the single in-flight Pages slot, so later runs fail with "due to in progress
-deployment" naming the stuck SHA; cancel the stuck run to unblock the queue.
+- No **generated** art for the systems added recently (elements use hand-drawn SVG in
+  `ui/ElementIcon.tsx`, affixes use a CSS aura). A Brave Burst effect sprite is the obvious batch.
+- Zones change monster pool and backdrop only — no zone-specific music or mechanics.
+- The Forge Weapon is one fixed item with no choice of investment and no in-combat representation.
+- Sprites are 2 frames (idle + attack); no hurt/death frames.
+- A faint shadow remnant on 1-2 monster sprites (e.g. wolf).
 
-## Balance state (measured, `npx vitest run src/engine/balanceSim.test.ts`)
-
-Naive always-pick-option-0 strategy, 100 seeds per class. Solo: 52-64/100 survivors past
-wave 10, median death wave 13-20 (group waves cost a few points). With a led starter squad: 100/100 past wave 10, median
-death wave 25-40. A **wave-20 wall** where every class and build died was fixed by giving
-each monster tier its own per-wave growth coefficient (`TIER_SCALING` in `waveScaling.ts`)
-— `normal` keeps the original 0.10/0.06 so the tuned early game is bit-for-bit unchanged.
-
-## Known gaps / natural next steps
-
-0. **No art for anything added this session** — affixes, elements, the Brave Burst and the
-   Echo ladder are all communicated through CSS badges and floating text. The asset
-   pipeline (`scripts/asset-gen/`) is untouched and still works; element icons and affix
-   frames are the obvious next generation batch.
-0b. **Multi-enemy waves were scoped out.** `CombatState.monster` is still singular. It is
-   the one part of chantier 4 that needs a real engine refactor rather than an additive
-   change, and it is the largest remaining gameplay gap.
-0c. Elemental multipliers are deliberately soft (1.35/0.75) because the hero's element is
-   locked for a whole run. Now that squad selection exists, pushing back toward BF's
-   1.5/0.5 is worth re-measuring.
-1. A faint shadow-blob remnant on 1-2 monster sprites (e.g. wolf) — see the background-removal writeup above.
-2. Deeper balance pass — a real, committed simulation harness now exists (`src/engine/balanceSim.test.ts`, run standalone via `npx vitest run src/engine/balanceSim.test.ts`; the "100 seeded runs, naive option-0" result cited in earlier revisions of this file was, on inspection, never actually committed anywhere — prose only). Current baseline with the relic↔companion synergy + Broken Blade + roster expansion in place: **49/100 survivors past wave 10**, in line with the previously-documented ~50/100 — the harness has a soft regression floor (`survivors >= 40/100`) so future changes get an automatic guard rail. Still worth a pass with a smarter simulated strategy (or real playtesting) rather than trusting "pick option 0" as a difficulty ceiling; class stat multipliers/innate modifiers, the Forge Weapon's per-level bonus, and the gacha pull-cost/rate curve remain first-pass, not exhaustively tuned.
-3. Gacha-premium visual polish (animated pulls, more particle/glow work) — the reveal overlay reuses the loot-card mythic/legendary shimmer but has no dedicated summon-circle/beam animation of its own yet.
-4. ~~Zones only change monster pool + background color~~ — fixed: zones now have real backdrop art (see Assets section). No zone-specific music/mechanics yet, still just monster pool + visuals.
-5. The Forge Weapon is a single fixed item (flat +damage/+crit per level) — no alternate forge weapons, no choice of which stat to invest in, no visual representation of it in combat (it's a pure meta stat-stick, not an equippable/rendered object).
-6. ~~Still single static images, not true animated sprite sheets~~ — partially fixed: every hero/monster/companion now has a second **attack frame** (34/34, txt2img — see Assets section), swapped in during the existing lunge choreography. Still only 2 frames (idle + attack), no hurt/death frames — a true multi-frame sheet remains future work, deliberately scoped out this pass (100+ generations was judged infeasible in one session).
-7. ~~The gacha "pity" concept doesn't exist~~ — fixed: see Gacha section below (`GachaPityState`, `RARE_PITY_THRESHOLD`/`LEGENDARY_PITY_THRESHOLD`).
-8. ~~Companion base stats never rebalanced~~ — partially fixed: `WaveManager.buildAlliesAndSpells` now scales companion attack/heal output by the hero's own level (`COMPANION_LEVEL_SCALING_PER_LEVEL`, +5%/level), the same axis the hero's own attack already grows on, so companions no longer fall behind the wave-scaling curve over a long run purely from being flat. `maxHp` deliberately still isn't level-scaled (would break the wave-clear-heal-fraction bookkeeping — see the code comment). The raw base numbers in `src/data/companions/*.ts` themselves were left untouched — they're reasonably tuned in isolation at wave 1 by rarity/role, the actual problem was the missing growth curve, not the starting values.
-9. ~~No long-term goal beyond repeating the same systems; a prestige layer was floated but never
-   scoped~~ — **built.** `src/engine/prestige.ts` + `src/data/prestige.ts` + `PrestigeTab`. Sealing
-   a record resets everything bought with essence (talents, Forge, Forge Weapon, Kingdom, companion
-   ranks, currency) and keeps everything *collected* (gacha roster, ascension, Grimoire, Hall of
-   Echoes) — taking back a collection is what makes prestige read as punishment. Sigils are paid on
-   **deepest wave reached**, never on currency held, so the reward is for playing rather than
-   idling. The hard rule: **a Sigil buys a rule change, never a bigger number** — extra loot options,
-   a fourth squad slot, a pre-charged Brave Burst, a shorter Echo cadence, an opening hand of
-   relics, carried gold. `prestige.test.ts` fails if anyone adds a stat bonus to the catalogue.
-   `PrestigeRules` is deliberately a plain value object rather than another `RelicModifier[]`:
-   these are the rules a run is assembled from, not entries in the stat pipeline.
-9b. General "content feels thin after a few sessions" feedback — Ascension addresses one specific instance (Gacha going stale post-unlock) but the broader concern (a long-term progression goal beyond repeating the same systems) is still open; a prestige/rebirth layer was floated as one option, not yet scoped or built.
-10. ~~Kingdom territories/lords have no dedicated art~~ — fixed: territories/lords now have generated art (see Assets section).
+The full history of what was tried and rejected — asset-pipeline gotchas, the img2img dead end, the
+gacha/ascension/kingdom mechanics in detail — is archived at the end of `DESIGN_NOTES.md`.

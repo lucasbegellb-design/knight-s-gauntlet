@@ -9,7 +9,11 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify": "node scripts/agent/verify.mjs",
+    "typecheck": "tsc -b",
+    "map": "node scripts/agent/map.mjs",
+    "ci": "node scripts/agent/ci.mjs"
   },
   "dependencies": {
     "idb-keyval": "^6.3.0",
