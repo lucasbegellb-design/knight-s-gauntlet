@@ -31,6 +31,8 @@ const companionAttackTextureKey = (id: string) => `companion_${id}_attack`;
 const zoneTextureKey = (id: string) => `zone_${id}`;
 
 const HERO_COLOR = 0x3b82c4;
+/** Shadow-purple wash applied to the hero's own sprite when it's reused for an Echo encounter. */
+const ECHO_TINT = 0x6a4fd1;
 const HERO_SIZE = { width: 130, height: 150 };
 
 const MONSTER_APPEARANCE: Record<MonsterTier, { color: number; width: number; height: number }> = {
@@ -286,17 +288,21 @@ export class CombatScene extends Phaser.Scene {
     const runState = this.waveManager.getRunState();
     const appearance = MONSTER_APPEARANCE[runState.monsterTier];
     const scale = MONSTER_SPRITE_SCALE[state.monster.id] ?? 1;
+    // An Echo has no bestiary art of its own — it's a mirror of the hero, so it wears the hero's
+    // own sprite (tinted shadow-purple) instead of falling back to the generic rectangle.
+    const textureKey = runState.isEcho ? heroTextureKey(this.heroClassId) : monsterTextureKey(state.monster.id);
+    const attackTextureKey = runState.isEcho ? heroAttackTextureKey(this.heroClassId) : monsterAttackTextureKey(state.monster.id);
     this.monsterView = this.createUnitView(
       MONSTER_X,
       MONSTER_Y,
       Math.round(appearance.width * scale),
       Math.round(appearance.height * scale),
       appearance.color,
-      monsterTextureKey(state.monster.id),
+      textureKey,
       undefined,
       undefined,
-      undefined,
-      monsterAttackTextureKey(state.monster.id),
+      runState.isEcho ? ECHO_TINT : undefined,
+      attackTextureKey,
     );
     if ('setFlipX' in this.monsterView.body) this.monsterView.body.setFlipX(true);
     this.updateUnitView(this.monsterView, state.monster.name, state.monster.hp, state.monster.maxHp);
@@ -335,7 +341,10 @@ export class CombatScene extends Phaser.Scene {
       if (event.type === 'waveStarted') {
         this.rebuildMonsterView();
         this.rebuildAllyViews();
-        useMetaStore.getState().discover('monster', event.monster.id);
+        if (!event.monster.isEcho) useMetaStore.getState().discover('monster', event.monster.id);
+        if (event.monster.isEcho) {
+          this.showFloatingText(400, 34, 'AN ECHO OF YOURSELF STIRS...', '#b39dff', 18);
+        }
         if (event.zone.isNewZone) {
           this.applyZoneBackground();
           const continent = continentForZone(event.zone.id);
@@ -524,6 +533,7 @@ export class CombatScene extends Phaser.Scene {
       heroClassName: this.heroClassName,
       monsterName: combat.monster.name,
       monsterTier: run.monsterTier,
+      isEcho: run.isEcho,
       monsterHp: combat.monster.hp,
       monsterMaxHp: combat.monster.maxHp,
       heroLevel: run.heroProgress.level,

@@ -65,13 +65,19 @@ export function Hud() {
           <div className="hud-label">
             Wave {state.waveNumber} <span className="hud-sublabel">— {state.zoneName}</span>
           </div>
-          {state.monsterTier !== 'normal' && (
-            <div
-              className={`tier-badge ${TIER_BADGE_CLASS[state.monsterTier]}`}
-              style={{ color: TIER_COLOR[state.monsterTier] }}
-            >
-              {TIER_LABEL[state.monsterTier]}
+          {state.isEcho ? (
+            <div className="tier-badge tier-badge-echo" style={{ color: '#b39dff' }}>
+              ECHO
             </div>
+          ) : (
+            state.monsterTier !== 'normal' && (
+              <div
+                className={`tier-badge ${TIER_BADGE_CLASS[state.monsterTier]}`}
+                style={{ color: TIER_COLOR[state.monsterTier] }}
+              >
+                {TIER_LABEL[state.monsterTier]}
+              </div>
+            )
           )}
           <div className="hud-sublabel">{state.monsterName}</div>
           <Bar value={state.monsterHp} max={state.monsterMaxHp} color="#e74c3c" />
