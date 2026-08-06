@@ -57,6 +57,8 @@ export interface RunSnapshot {
   /** How many enemies this wave spawned, and how many are still standing. */
   monsterCount: number;
   monstersRemaining: number;
+  /** Empty companion slots — drives the Solitary Trial readout. */
+  emptyCompanionSlots: number;
   heroLevel: number;
   heroXp: number;
   heroXpToNext: number;
@@ -110,6 +112,7 @@ const initialSnapshot: RunSnapshot = {
   monsterMaxHp: 0,
   monsterCount: 1,
   monstersRemaining: 1,
+  emptyCompanionSlots: 0,
   heroLevel: 1,
   heroXp: 0,
   heroXpToNext: 0,

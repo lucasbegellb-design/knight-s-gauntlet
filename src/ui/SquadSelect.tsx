@@ -2,6 +2,7 @@ import { allCompanions } from '../data/companions';
 import { classRegistry } from '../data/classes';
 import { useMetaStore } from '../store/metaStore';
 import { MAX_ACTIVE_COMPANIONS } from '../engine/WaveManager';
+import { SOLITUDE_PER_EMPTY_SLOT } from '../engine/solitude';
 import { ELEMENT_META, counteredBy, counters, type Element } from '../engine/elements';
 import { ElementIcon } from './ElementIcon';
 import { GeneratedPortrait } from './RarityIcon';
@@ -96,6 +97,37 @@ function CompanionCard({
 }
 
 /**
+ * States the understrength tradeoff at the point the decision is actually made.
+ *
+ * Going in short-handed is a supported way to play, not a mistake, and it is compensated — but a
+ * compensation the player cannot see before choosing is indistinguishable from the numbers being
+ * arbitrary. This spells out both halves: what an empty slot gives, and that a full squad is still
+ * the stronger play.
+ */
+function SolitaryTrialNote({ emptySlots }: { emptySlots: number }) {
+  if (emptySlots <= 0) {
+    return (
+      <div className="solitude-note solitude-note-full">
+        Full squad. No Solitary Trial bonus — you will not need one.
+      </div>
+    );
+  }
+
+  const damage = Math.round((SOLITUDE_PER_EMPTY_SLOT.damageMultiplier as number) * emptySlots * 100);
+  const speed = Math.round((SOLITUDE_PER_EMPTY_SLOT.attackSpeedMultiplier as number) * emptySlots * 100);
+  const health = Math.round((SOLITUDE_PER_EMPTY_SLOT.maxHpBonusPercent as number) * emptySlots * 100);
+
+  return (
+    <div className="solitude-note">
+      <strong>Solitary Trial ×{emptySlots}</strong> — the Gauntlet calibrates to the squad that walked in. Each empty
+      slot is worth roughly <strong>+{damage}% damage</strong>, <strong>+{speed}% attack speed</strong> and{' '}
+      <strong>+{health}% health</strong>, and empty slots keep companion loot in rotation. A full squad is still the
+      stronger play — this only makes going short-handed a real choice.
+    </div>
+  );
+}
+
+/**
  * The one piece of elemental advice worth giving, at the squad level rather than per card.
  *
  * An earlier version warned on each companion whose element was merely *neutral* against the
@@ -151,9 +183,10 @@ export function SquadSelect() {
 
       <p className="class-select-intro">
         Up to {MAX_ACTIVE_COMPANIONS} companions. The first one you pick <strong>leads</strong> — its Leader Skill
-        applies to the whole party for as long as it stays standing. Leave slots empty to keep finding companions as
-        loot instead.
+        applies to the whole party for as long as it stays standing.
       </p>
+
+      <SolitaryTrialNote emptySlots={MAX_ACTIVE_COMPANIONS - selectedCompanionIds.length} />
 
       <div className="squad-summary">
         <span>

@@ -1,6 +1,7 @@
 import { useRunStore, type CombatSpeed } from '../store/runStore';
 import { AffinityCallout, ElementBadge } from './ElementBadge';
 import { resumeAudio } from '../audio/sfx';
+import { SOLITUDE_PER_EMPTY_SLOT } from '../engine/solitude';
 import { useMetaStore } from '../store/metaStore';
 import { RARITY_COLOR } from '../data/rarity';
 import type { MonsterTier } from '../data/monster.types';
@@ -65,6 +66,26 @@ function Bar({ value, max, color }: { value: number; max: number; color: string 
  * base power a moment later. Nothing is lost by never touching it, which is the point — an idle
  * game earns its one interaction only if declining it is still a complete way to play.
  */
+/**
+ * The Solitary Trial readout. An unexplained stat bonus is worse than no bonus — the player has to
+ * be able to connect "I went in short-handed" to "I hit harder", or the balance pass reads as the
+ * numbers being arbitrary.
+ */
+function SolitaryTrialBadge() {
+  const emptySlots = useRunStore((s) => s.emptyCompanionSlots);
+  if (emptySlots <= 0) return null;
+
+  const percent = Math.round((SOLITUDE_PER_EMPTY_SLOT.damageMultiplier as number) * emptySlots * 100);
+  return (
+    <span
+      className="solitude-badge"
+      title={`The Gauntlet calibrates to the squad that walked in. ${emptySlots} empty slot${emptySlots > 1 ? 's' : ''}: roughly +${percent}% damage, plus attack speed, max HP and lifesteal.`}
+    >
+      ⚔ Solitary Trial ×{emptySlots}
+    </span>
+  );
+}
+
 function MuteButton() {
   const audioMuted = useMetaStore((s) => s.audioMuted);
   const toggleAudioMuted = useMetaStore((s) => s.toggleAudioMuted);
@@ -199,6 +220,7 @@ export function Hud() {
           </button>
         ))}
         <MuteButton />
+        <SolitaryTrialBadge />
         {state.brokenParts > 0 && <span className="hud-sublabel">⚙️ {state.brokenParts} broken parts</span>}
         <span className="gold-display">🪙 {state.gold} gold</span>
         <button

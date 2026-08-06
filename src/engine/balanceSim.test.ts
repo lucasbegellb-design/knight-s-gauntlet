@@ -116,6 +116,14 @@ describe('balance simulation (naive always-pick-option-0 strategy)', () => {
     }
 
     report('squad vs solo', lines);
-    expect(improved, 'bringing a led squad should push most classes deeper into the run').toBeGreaterThanOrEqual(3);
+
+    // The design invariant this whole balance pass hangs on. Going alone must stay *viable* — the
+    // Solitary Trial exists for that — but bringing a squad must stay *better*, or the gacha, the
+    // roster and the entire squad screen become decoration. This is the assertion that catches a
+    // solo buff going too far, which the floor check above structurally cannot: a floor only ever
+    // notices things getting weaker.
+    expect(improved, 'bringing a led squad must push every class deeper into the run than going alone').toBe(
+      allClasses.length,
+    );
   });
 });

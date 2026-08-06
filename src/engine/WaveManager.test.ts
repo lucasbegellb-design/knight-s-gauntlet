@@ -197,9 +197,14 @@ describe('WaveManager', () => {
     expect(state.monsterName).toContain('Echo');
 
     const combat = manager.getCombatState();
-    // 90% of the hero's own effective HP/attack for that wave (ECHO_POWER_FRACTION), not a bestiary stat block.
+    // 90% of the hero's own effective HP/attack for that wave (ECHO_POWER_FRACTION), not a bestiary
+    // stat block. maxHp is exact because modifiers are baked into the stat; attack is not, because
+    // the Echo mirrors the hero's *effective* attack — raw stat times its damage multipliers — while
+    // `hero.attack` stays the raw figure and the multipliers are applied at hit-resolution time. So
+    // the Echo's attack meets or exceeds 90% of the raw number, by however much the run's damage
+    // modifiers are worth. Asserting exact equality here only held while nothing granted any.
     expect(combat.monsters[0]!.maxHp).toBe(Math.round(combat.hero.maxHp * 0.9));
-    expect(combat.monsters[0]!.attack).toBe(Math.round(combat.hero.attack * 0.9));
+    expect(combat.monsters[0]!.attack).toBeGreaterThanOrEqual(Math.round(combat.hero.attack * 0.9));
   });
 
   it('ends the run and stops ticking once the hero dies (without Phoenix Heart)', () => {
@@ -281,14 +286,18 @@ describe('WaveManager', () => {
     const computeModifiers = (manager as unknown as { computeModifiers: () => { damageMultiplierSum: number } })
       .computeModifiers.bind(manager);
 
-    expect(computeModifiers().damageMultiplierSum).toBe(0);
+    // Measured as a delta against the run's baseline rather than as an absolute sum. The absolute
+    // form silently asserted that nothing else in the game contributes a damageMultiplier, which
+    // stopped being true the moment the Solitary Trial shipped — and would break again for any
+    // future source. The delta is what this test actually cares about.
+    const baseline = computeModifiers().damageMultiplierSum;
 
     stateOf(manager).ownedRelics = [{ id: 'broken_blade', count: 1 }];
     stateOf(manager).brokenParts = 10;
-    expect(computeModifiers().damageMultiplierSum).toBeCloseTo(0.1); // 10 parts * 1% per part
+    expect(computeModifiers().damageMultiplierSum - baseline).toBeCloseTo(0.1); // 10 parts * 1% per part
 
     stateOf(manager).brokenParts = 500;
-    expect(computeModifiers().damageMultiplierSum).toBeCloseTo(0.25); // capped at 25 parts counted
+    expect(computeModifiers().damageMultiplierSum - baseline).toBeCloseTo(0.25); // capped at 25 parts counted
   });
 
   it('applies relic damage modifiers to companion attacks too, not just the hero', () => {
@@ -312,11 +321,22 @@ describe('WaveManager', () => {
       .allies.find((a) => a.combatant.id === 'roguish_blade')?.combatant.attack;
     expect(buffedAllyAttack).toBe(5);
 
-    const events = manager.tick(1000);
-    const allyHit = events.find(
-      (e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'roguish_blade',
-    );
-    expect(allyHit && allyHit.type === 'combat' && allyHit.event.type === 'attack' && allyHit.event.damage).toBe(6); // round(5 * 1.25)
+    // Compared against the same setup without the relic rather than against a hardcoded number:
+    // other party-wide modifiers (the Solitary Trial, for one) also land on this hit, and the claim
+    // under test is that a *relic's* damage bonus reaches a companion at all.
+    const damageOfAllyHit = (m: WaveManager): number => {
+      const events = m.tick(1000);
+      const hit = events.find(
+        (e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'roguish_blade',
+      );
+      return hit && hit.type === 'combat' && hit.event.type === 'attack' ? hit.event.damage : 0;
+    };
+
+    const control = new WaveManager(passiveHero, 1);
+    stateOf(control).companions = [{ id: 'roguish_blade', hp: 30 }];
+    rebuildEngine(control);
+
+    expect(damageOfAllyHit(manager)).toBeGreaterThan(damageOfAllyHit(control));
   });
 
   it('recruits a companion into the roster and fields it as an ally in combat', () => {
@@ -520,10 +540,12 @@ describe('WaveManager', () => {
     stateOf(manager).companions = [{ id: 'roguish_blade', hp: 30 }];
     rebuildEngine(manager);
 
-    const events = manager.tick(1000);
-
-    const allyAttack = events.find((e) => e.type === 'combat' && e.event.type === 'attack' && e.event.attackerId === 'roguish_blade');
+    // Asserted on the companion's own attack stat rather than on a damage event. Rank scaling is
+    // baked into the stat at construction, whereas a damage number has additionally passed through
+    // every party-wide modifier in the run — so reading damage here was measuring the whole
+    // pipeline while claiming to measure the rank bonus.
+    const ally = manager.getCombatState().allies.find((a) => a.combatant.id === 'roguish_blade');
     // roguish_blade base attack 5, rank 5 * 0.08/rank = +40% => round(5 * 1.4) = 7
-    expect(allyAttack && allyAttack.type === 'combat' && allyAttack.event.type === 'attack' ? allyAttack.event.damage : null).toBe(7);
+    expect(ally?.combatant.attack).toBe(7);
   });
 });

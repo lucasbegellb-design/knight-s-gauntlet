@@ -736,6 +736,7 @@ export class CombatScene extends Phaser.Scene {
       burstArmed: combat.burstArmed,
       monsterHp: focus?.hp ?? 0,
       monsterMaxHp: focus?.maxHp ?? 0,
+      emptyCompanionSlots: run.emptyCompanionSlots,
       monsterCount: combat.monsters.length,
       monstersRemaining: livingMonsters,
       heroLevel: run.heroProgress.level,

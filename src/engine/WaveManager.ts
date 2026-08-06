@@ -7,6 +7,7 @@ import { rollWaveAffix } from './affixes';
 import type { MonsterTraits, WaveAffix } from '../data/affixes';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
 import { collectConditionals } from './conditionals';
+import { resolveSolitudeModifiers } from './solitude';
 import type { RunConditionContext } from './CombatEngine';
 import { primaryMonster } from './CombatEngine';
 import { generateLootOptions, type LootContext, type LootOption } from './loot';
@@ -212,6 +213,8 @@ export interface RunState {
   echoRecord: EchoRecord | null;
   /** How many enemies this wave spawned. 1 for bosses, minibosses and Echoes. */
   monsterGroupSize: number;
+  /** Empty companion slots this wave, driving the Solitary Trial bonus. 0 at full strength. */
+  emptyCompanionSlots: number;
   zoneId: string;
   zoneName: string;
   gold: number;
@@ -339,6 +342,7 @@ export class WaveManager {
       monsterAffix: null,
       echoRecord: null,
       monsterGroupSize: 1,
+      emptyCompanionSlots: MAX_ACTIVE_COMPANIONS,
       zoneId: '',
       zoneName: '',
       gold: 0,
@@ -720,6 +724,13 @@ export class WaveManager {
     const leaderSkill = leader ? companionRegistry.get(leader.id).leaderSkill : undefined;
     const leaderSources: ModifierSource[] = leaderSkill ? [{ modifiers: leaderSkill.modifiers, count: 1 }] : [];
 
+    // Counts living companions, so a party wiped mid-run ramps the hero up as it happens rather
+    // than only at squad-selection time.
+    const livingCompanions = this.state.companions.filter((owned) => owned.hp > 0).length;
+    const solitudeModifiers = resolveSolitudeModifiers(livingCompanions, MAX_ACTIVE_COMPANIONS);
+    this.state.emptyCompanionSlots = MAX_ACTIVE_COMPANIONS - livingCompanions;
+    const solitudeSources: ModifierSource[] = solitudeModifiers.length > 0 ? [{ modifiers: solitudeModifiers, count: 1 }] : [];
+
     const brokenBladeSources: ModifierSource[] = this.state.ownedRelics.some((owned) => owned.id === BROKEN_BLADE_ID)
       ? [
           {
@@ -735,6 +746,7 @@ export class WaveManager {
       ...passiveSpellSources,
       ...companionAuraSources,
       ...leaderSources,
+      ...solitudeSources,
       ...brokenBladeSources,
       talentSource,
       classSource,
