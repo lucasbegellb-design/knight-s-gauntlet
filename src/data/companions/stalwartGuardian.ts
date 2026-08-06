@@ -11,7 +11,7 @@ export const stalwartGuardian: CompanionDefinition = {
   name: 'Stalwart Guardian',
   rarity: 'common',
   role: 'tank',
-  description: 'A shield-bearer who draws enemy attacks away from the party.',
+  description: "Held a doorway for eleven years. The building came down. He is still holding the doorway.",
   maxHp: 70,
   attack: 3,
   attackIntervalMs: 1400,

@@ -11,7 +11,7 @@ export const wanderingCleric: CompanionDefinition = {
   name: 'Wandering Cleric',
   rarity: 'rare',
   role: 'healer',
-  description: 'Mends the party’s most wounded member on a steady rhythm.',
+  description: "Patches wounds between waves rather than after them. Considers 'after' optimistic.",
   maxHp: 34,
   attack: 0,
   attackIntervalMs: 2200,

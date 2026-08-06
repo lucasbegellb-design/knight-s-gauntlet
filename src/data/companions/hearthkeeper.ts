@@ -11,7 +11,7 @@ export const hearthkeeper: CompanionDefinition = {
   name: 'Hearthkeeper',
   rarity: 'epic',
   role: 'healer',
-  description: 'A hardened field medic whose mending outpaces any wound the party takes.',
+  description: "Carries the fire from camp into the field. Everyone ends up standing closer to her.",
   maxHp: 40,
   attack: 0,
   attackIntervalMs: 2000,

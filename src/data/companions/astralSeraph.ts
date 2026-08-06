@@ -11,7 +11,7 @@ export const astralSeraph: CompanionDefinition = {
   name: 'Astral Seraph',
   rarity: 'mythic',
   role: 'support',
-  description: 'A celestial guardian whose radiance sharpens every strike the party lands.',
+  description: "Something older than the Forge looked at your squad and decided it was worth keeping.",
   maxHp: 36,
   attack: 0,
   attackIntervalMs: 999_999,

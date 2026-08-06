@@ -7,5 +7,6 @@ export const luckyCoin: RelicDefinition = {
   tags: ['crit'],
   stacking: 'stackable',
   description: 'Increases critical hit chance.',
+  flavor: "Two-headed. Nobody has ever needed to check.",
   modifiers: [{ kind: 'critChance', value: 0.04 }],
 };

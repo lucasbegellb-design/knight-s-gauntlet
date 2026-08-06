@@ -11,7 +11,7 @@ export const roguishBlade: CompanionDefinition = {
   name: 'Roguish Blade',
   rarity: 'common',
   role: 'dps',
-  description: 'A quick striker who attacks alongside you.',
+  description: "Signed on for the loot. Has read the contract. Is staying anyway, which worries everyone.",
   maxHp: 30,
   attack: 5,
   attackIntervalMs: 1000,

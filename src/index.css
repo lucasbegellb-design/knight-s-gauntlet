@@ -1502,3 +1502,14 @@ body {
   font-size: 0.85rem;
   text-align: center;
 }
+
+/* ---- Flavor text (LORE.md writing rules: mechanics and voice never share a line) ---- */
+.loot-card-flavor {
+  margin-top: 0.45rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  color: #8f8f8f;
+  font-size: 0.68rem;
+  font-style: italic;
+  line-height: 1.4;
+}

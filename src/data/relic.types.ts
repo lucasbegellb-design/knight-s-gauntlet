@@ -78,7 +78,10 @@ export interface RelicDefinition {
   name: string;
   rarity: Rarity;
   tags: RelicTag[];
+  /** What the relic does, mechanically. The player must never have to guess this from the flavor. */
   description: string;
+  /** What the relic *is*. One line, per LORE.md's writing rules. Purely presentational. */
+  flavor?: string;
   stacking: RelicStacking;
   modifiers: RelicModifier[];
   /** Conditional, multiplicative effects — the combo layer. See `ConditionalModifier`. */

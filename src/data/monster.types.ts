@@ -11,6 +11,8 @@ export interface MonsterDefinition {
   maxHp: number;
   attack: number;
   attackIntervalMs: number;
+  /** One line of voice, shown on the bestiary/Grimoire entry. Purely presentational. */
+  flavor?: string;
   /** Base XP awarded to the hero on kill, before any wave scaling. */
   xpReward: number;
   spriteKey?: string;

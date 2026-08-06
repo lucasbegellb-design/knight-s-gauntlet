@@ -9,6 +9,7 @@ export const firePackRelics: RelicDefinition[] = [
     tags: ['fire'],
     stacking: 'stackable',
     description: 'Your attacks have a chance to burn the enemy.',
+    flavor: "Left on a workbench overnight. Still going.",
     modifiers: [{ kind: 'burnChance', value: 0.06 }],
   },
   {
@@ -18,6 +19,7 @@ export const firePackRelics: RelicDefinition[] = [
     tags: ['fire'],
     stacking: 'stackable',
     description: 'Burning damage is increased.',
+    flavor: "Sold as a candle. Aggressively not a candle.",
     modifiers: [{ kind: 'burnDamageMultiplier', value: 0.1 }],
   },
   {
@@ -27,6 +29,7 @@ export const firePackRelics: RelicDefinition[] = [
     tags: ['fire'],
     stacking: 'stackable',
     description: 'Increases attack damage.',
+    flavor: "Swept up from the Cinder Wastes and bottled by an optimist.",
     modifiers: [{ kind: 'damageMultiplier', value: 0.05 }],
   },
   {
@@ -36,6 +39,7 @@ export const firePackRelics: RelicDefinition[] = [
     tags: ['fire'],
     stacking: 'stackable',
     description: 'Your attacks are more likely to burn, and burns hit harder.',
+    flavor: "Something grew this on purpose, which is the worrying part.",
     modifiers: [
       { kind: 'burnChance', value: 0.1 },
       { kind: 'burnDamageMultiplier', value: 0.05 },
@@ -48,6 +52,7 @@ export const firePackRelics: RelicDefinition[] = [
     tags: ['fire', 'crit'],
     stacking: 'stackable',
     description: 'Critical hits deal much greater burning damage.',
+    flavor: "What is left when the Forge finishes a thought.",
     modifiers: [{ kind: 'critBurnBonusMultiplier', value: 0.3 }],
   },
   {
@@ -57,6 +62,7 @@ export const firePackRelics: RelicDefinition[] = [
     tags: ['fire'],
     stacking: 'unique',
     description: 'Greatly increases burn chance and attack damage.',
+    flavor: "The mark is not decorative. It is a filing reference.",
     modifiers: [
       { kind: 'burnChance', value: 0.15 },
       { kind: 'damageMultiplier', value: 0.08 },
@@ -69,6 +75,7 @@ export const firePackRelics: RelicDefinition[] = [
     tags: ['fire'],
     stacking: 'unique',
     description: 'Burning damage is massively increased, and burns happen often.',
+    flavor: "Beats roughly once a minute. That is enough.",
     modifiers: [
       { kind: 'burnDamageMultiplier', value: 0.35 },
       { kind: 'burnChance', value: 0.1 },

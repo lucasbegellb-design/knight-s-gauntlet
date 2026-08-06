@@ -4,7 +4,7 @@ export const duelistClass: ClassDefinition = {
   id: 'duelist',
   element: 'thunder',
   name: 'Duelist',
-  description: 'Fast, precise strikes that land brutal crits. Fragile if the enemy gets a hit in first.',
+  description: "Devoted to Impulse. Struck three times while you were reading this. Fragile, quick, and never once waited to be sure.",
   statMultiplier: { maxHp: 0.88, attack: 1.05, attackIntervalMs: 0.78 },
   innateModifiers: [
     { kind: 'critChance', value: 0.08 },

@@ -4,6 +4,7 @@ export const orcChieftain: MonsterDefinition = {
   id: 'orc_chieftain',
   element: 'fire',
   name: 'Orc Chieftain',
+  flavor: "Runs the only functioning organisation in the region. Unfortunately.",
   tier: 'miniboss',
   maxHp: 65,
   attack: 6,

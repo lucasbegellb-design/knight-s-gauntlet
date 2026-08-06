@@ -11,7 +11,7 @@ export const ironVanguard: CompanionDefinition = {
   name: 'Iron Vanguard',
   rarity: 'rare',
   role: 'tank',
-  description: 'A veteran wall of plate armor, sturdier than any starting recruit.',
+  description: "Drilled the formation until it was boring. Boring keeps people alive.",
   maxHp: 85,
   attack: 4,
   attackIntervalMs: 1300,

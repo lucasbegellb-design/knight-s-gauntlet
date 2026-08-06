@@ -11,7 +11,7 @@ export const campBard: CompanionDefinition = {
   name: 'Camp Bard',
   rarity: 'epic',
   role: 'support',
-  description: 'Their song quickens the whole party’s attacks while they remain standing.',
+  description: "The Forge's spec said 'operational squad'. Nobody dared cut the line item. So: a bard.",
   maxHp: 24,
   attack: 0,
   attackIntervalMs: 999_999,

@@ -9,6 +9,7 @@ export const economyPackRelics: RelicDefinition[] = [
     tags: ['economy'],
     stacking: 'stackable',
     description: 'Earn more gold from clearing waves.',
+    flavor: "Heavier on the way out of a fight than on the way in.",
     modifiers: [{ kind: 'goldMultiplier', value: 0.08 }],
   },
   {
@@ -18,6 +19,7 @@ export const economyPackRelics: RelicDefinition[] = [
     tags: ['economy'],
     stacking: 'stackable',
     description: 'Earn more XP from clearing waves.',
+    flavor: "Half the pages are receipts. The useful half.",
     modifiers: [{ kind: 'xpMultiplier', value: 0.08 }],
   },
   {
@@ -27,6 +29,7 @@ export const economyPackRelics: RelicDefinition[] = [
     tags: ['economy'],
     stacking: 'stackable',
     description: 'Earn more gold from clearing waves.',
+    flavor: "Balanced to the coin. The Forge never was.",
     modifiers: [{ kind: 'goldMultiplier', value: 0.08 }],
   },
   {
@@ -36,6 +39,7 @@ export const economyPackRelics: RelicDefinition[] = [
     tags: ['economy'],
     stacking: 'stackable',
     description: 'Earn more gold, and a little more XP, from clearing waves.',
+    flavor: "Owed to you by someone who has left the region.",
     modifiers: [
       { kind: 'goldMultiplier', value: 0.12 },
       { kind: 'xpMultiplier', value: 0.05 },
@@ -48,6 +52,7 @@ export const economyPackRelics: RelicDefinition[] = [
     tags: ['economy'],
     stacking: 'stackable',
     description: 'Earn more XP, and a little more gold, from clearing waves.',
+    flavor: "Records what you learn whether or not you wanted it recorded.",
     modifiers: [
       { kind: 'xpMultiplier', value: 0.12 },
       { kind: 'goldMultiplier', value: 0.05 },
@@ -60,6 +65,7 @@ export const economyPackRelics: RelicDefinition[] = [
     tags: ['economy'],
     stacking: 'unique',
     description: 'Greatly increases gold earned from clearing waves.',
+    flavor: "Stamped on nothing that still exists.",
     modifiers: [{ kind: 'goldMultiplier', value: 0.2 }],
   },
   {
@@ -69,6 +75,7 @@ export const economyPackRelics: RelicDefinition[] = [
     tags: ['economy'],
     stacking: 'unique',
     description: 'Massively increases gold and XP earned from clearing waves.',
+    flavor: "There was no king. There was, briefly, a ransom.",
     modifiers: [
       { kind: 'goldMultiplier', value: 0.4 },
       { kind: 'xpMultiplier', value: 0.2 },

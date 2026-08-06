@@ -7,6 +7,7 @@ export const goldenOpportunity: RelicDefinition = {
   tags: ['economy'],
   stacking: 'unique',
   description: 'Massively increases gold and XP earned from clearing waves.',
+  flavor: "Arrives exactly once and does not wait to be recognised.",
   modifiers: [
     { kind: 'goldMultiplier', value: 0.75 },
     { kind: 'xpMultiplier', value: 0.75 },

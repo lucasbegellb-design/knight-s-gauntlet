@@ -11,7 +11,7 @@ export const crimsonDragoon: CompanionDefinition = {
   name: 'Crimson Dragoon',
   rarity: 'legendary',
   role: 'dps',
-  description: 'A dragon-armored lancer whose strikes land with devastating force.',
+  description: "Charges before the order finishes. Has been right often enough that nobody corrects it.",
   maxHp: 40,
   attack: 14,
   attackIntervalMs: 1000,

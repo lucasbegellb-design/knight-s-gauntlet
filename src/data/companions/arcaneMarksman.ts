@@ -11,7 +11,7 @@ export const arcaneMarksman: CompanionDefinition = {
   name: 'Arcane Marksman',
   rarity: 'rare',
   role: 'dps',
-  description: 'A spellsword whose bolts hit harder than steel.',
+  description: "Calls every weak point out loud before firing. Nobody has asked her to stop.",
   maxHp: 26,
   attack: 8,
   attackIntervalMs: 1100,

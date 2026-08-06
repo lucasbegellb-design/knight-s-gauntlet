@@ -7,5 +7,6 @@ export const thornmailWard: RelicDefinition = {
   tags: ['vitality'],
   stacking: 'unique',
   description: 'Reflect a large portion of damage taken back at attackers.',
+  flavor: "Hurts to wear. Hurts more to hit.",
   modifiers: [{ kind: 'reflectDamagePercent', value: 0.25 }],
 };

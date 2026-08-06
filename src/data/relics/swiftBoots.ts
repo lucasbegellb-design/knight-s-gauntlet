@@ -7,5 +7,6 @@ export const swiftBoots: RelicDefinition = {
   tags: ['speed'],
   stacking: 'stackable',
   description: 'Attack faster.',
+  flavor: "The Forge issued these to everyone. Everyone still died.",
   modifiers: [{ kind: 'attackSpeedMultiplier', value: 0.08 }],
 };
