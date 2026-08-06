@@ -1257,3 +1257,31 @@ body {
   color: var(--arcane-bright);
   white-space: nowrap;
 }
+
+/* ---- Elemental affinity (engine/elements.ts) ---- */
+.element-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  margin-left: 0.3rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.element-badge-symbol { font-size: 0.78rem; line-height: 1; }
+
+.affinity-callout {
+  display: inline-block;
+  margin-left: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.affinity-strong { color: #7bffb0; text-shadow: 0 0 8px rgba(123, 255, 176, 0.45); }
+.affinity-weak { color: #ff8f8f; text-shadow: 0 0 8px rgba(255, 143, 143, 0.35); }

@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const crimsonDragoon: CompanionDefinition = {
   id: 'crimson_dragoon',
+  element: 'fire',
   name: 'Crimson Dragoon',
   rarity: 'legendary',
   role: 'dps',

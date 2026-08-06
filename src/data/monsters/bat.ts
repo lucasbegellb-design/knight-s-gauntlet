@@ -2,6 +2,7 @@ import type { MonsterDefinition } from '../monster.types';
 
 export const bat: MonsterDefinition = {
   id: 'bat',
+  element: 'thunder',
   name: 'Cave Bat',
   tier: 'normal',
   maxHp: 18,

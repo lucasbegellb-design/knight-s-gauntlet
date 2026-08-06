@@ -11,11 +11,11 @@ import { Rng } from './rng';
 import type { CompanionDefinition } from '../data/companion.types';
 
 const pool: CompanionDefinition[] = [
-  { id: 'c1', name: 'Common One', rarity: 'common', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
-  { id: 'r1', name: 'Rare One', rarity: 'rare', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
-  { id: 'e1', name: 'Epic One', rarity: 'epic', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
-  { id: 'l1', name: 'Legendary One', rarity: 'legendary', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
-  { id: 'm1', name: 'Mythic One', rarity: 'mythic', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
+  { id: 'c1', element: 'fire', name: 'Common One', rarity: 'common', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
+  { id: 'r1', element: 'fire', name: 'Rare One', rarity: 'rare', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
+  { id: 'e1', element: 'fire', name: 'Epic One', rarity: 'epic', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
+  { id: 'l1', element: 'fire', name: 'Legendary One', rarity: 'legendary', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
+  { id: 'm1', element: 'fire', name: 'Mythic One', rarity: 'mythic', role: 'dps', description: '', maxHp: 10, attack: 1, attackIntervalMs: 1000 },
 ];
 
 describe('pullGacha', () => {

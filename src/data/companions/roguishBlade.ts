@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const roguishBlade: CompanionDefinition = {
   id: 'roguish_blade',
+  element: 'dark',
   name: 'Roguish Blade',
   rarity: 'common',
   role: 'dps',

@@ -218,7 +218,7 @@ export class CombatScene extends Phaser.Scene {
     this.heroClassName = classDef.name;
     this.heroClassId = classDef.id;
 
-    const scaledHero = scaleHeroDefinition(knight, classDef.statMultiplier);
+    const scaledHero = scaleHeroDefinition(knight, classDef.statMultiplier, classDef.element);
     const startingEquipment: Partial<EquippedItems> = meta.startingWeapon
       ? { weapon: { defId: meta.startingWeapon.defId, rarity: meta.startingWeapon.rarity } }
       : {};
@@ -531,6 +531,8 @@ export class CombatScene extends Phaser.Scene {
       waveNumber: run.waveNumber,
       zoneName: run.zoneName,
       heroClassName: this.heroClassName,
+      heroElement: combat.hero.element,
+      monsterElement: combat.monster.element,
       monsterName: combat.monster.name,
       monsterTier: run.monsterTier,
       isEcho: run.isEcho,

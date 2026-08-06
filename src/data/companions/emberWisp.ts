@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const emberWisp: CompanionDefinition = {
   id: 'ember_wisp',
+  element: 'fire',
   name: 'Ember Wisp',
   rarity: 'epic',
   role: 'summoner',

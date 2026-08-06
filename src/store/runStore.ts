@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { MonsterTier } from '../data/monster.types';
+import type { Element } from '../engine/elements';
 import type { EquipmentSlot } from '../data/equipment.types';
 import type { CompanionRole } from '../data/companion.types';
 import type { Rarity } from '../data/rarity';
@@ -35,6 +36,8 @@ export interface RunSnapshot {
   waveNumber: number;
   zoneName: string;
   heroClassName: string;
+  heroElement?: Element;
+  monsterElement?: Element;
   monsterName: string;
   monsterTier: MonsterTier;
   /** True when the current wave's monster is an Echo of the hero's own stats — see WaveManager. */
@@ -76,6 +79,8 @@ const initialSnapshot: RunSnapshot = {
   waveNumber: 1,
   zoneName: '',
   heroClassName: 'Knight',
+  heroElement: undefined,
+  monsterElement: undefined,
   monsterName: '',
   monsterTier: 'normal',
   isEcho: false,

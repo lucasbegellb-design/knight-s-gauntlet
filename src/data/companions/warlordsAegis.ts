@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const warlordsAegis: CompanionDefinition = {
   id: 'warlords_aegis',
+  element: 'dark',
   name: "Warlord's Aegis",
   rarity: 'legendary',
   role: 'support',

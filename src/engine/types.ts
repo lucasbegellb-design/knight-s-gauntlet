@@ -1,5 +1,6 @@
 import type { CompanionRole } from '../data/companion.types';
 import type { SpellEffect } from '../data/spell.types';
+import type { Element } from './elements';
 
 export interface Combatant {
   id: string;
@@ -9,6 +10,8 @@ export interface Combatant {
   attack: number;
   attackIntervalMs: number;
   nextAttackAt: number;
+  /** Elemental affinity. Undefined is neutral both ways — see `elements.ts`. */
+  element?: Element;
 }
 
 /**
@@ -51,7 +54,9 @@ export type CombatEvent =
   | { type: 'execute'; targetId: string }
   | { type: 'reflect'; damagedId: string; damage: number }
   | { type: 'companionHeal'; healerId: string; targetId: string; amount: number }
-  | { type: 'spellCast'; spellId: string; targetId: string; effect: SpellEffect; amount: number };
+  | { type: 'spellCast'; spellId: string; targetId: string; effect: SpellEffect; amount: number }
+  /** Emitted alongside an `attack` whenever the elemental matchup wasn't neutral, so the UI can call it out. */
+  | { type: 'affinity'; attackerId: string; targetId: string; affinity: 'strong' | 'weak' };
 
 export interface CombatState {
   hero: Combatant;

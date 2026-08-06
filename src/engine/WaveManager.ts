@@ -16,6 +16,7 @@ import { allCompanions, companionRegistry } from '../data/companions';
 import { spellRegistry } from '../data/spells';
 import { RARITY_POWER_MULTIPLIER, type Rarity } from '../data/rarity';
 import type { RelicModifier } from '../data/relic.types';
+import type { Element } from './elements';
 
 /** Fraction of missing HP recovered on each wave clear, on top of any relic-granted regen. */
 const WAVE_CLEAR_HEAL_FRACTION = 0.45;
@@ -130,6 +131,8 @@ export interface RunState {
   monsterName: string;
   /** True when the current wave's monster is an Echo of the hero's own stats, not a bestiary entry. */
   isEcho: boolean;
+  /** Current monster's element, mirrored into run state so the HUD can show the matchup. */
+  monsterElement?: Element;
   zoneId: string;
   zoneName: string;
   gold: number;
@@ -149,7 +152,7 @@ export type WaveEvent =
   | {
       type: 'waveStarted';
       waveNumber: number;
-      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number; isEcho: boolean };
+      monster: { id: string; name: string; tier: MonsterTier; maxHp: number; attack: number; isEcho: boolean; element?: Element };
       zone: { id: string; name: string; isNewZone: boolean };
     }
   | { type: 'waveCleared'; waveNumber: number; xpGained: number }
@@ -168,8 +171,16 @@ function pickFrom(list: MonsterDefinition[], rng: Rng): MonsterDefinition {
   return list[Math.min(index, list.length - 1)] as MonsterDefinition;
 }
 
-function buildCombatant(id: string, name: string, hp: number, maxHp: number, attack: number, attackIntervalMs: number): Combatant {
-  return { id, name, hp, maxHp, attack, attackIntervalMs, nextAttackAt: attackIntervalMs };
+function buildCombatant(
+  id: string,
+  name: string,
+  hp: number,
+  maxHp: number,
+  attack: number,
+  attackIntervalMs: number,
+  element?: Element,
+): Combatant {
+  return { id, name, hp, maxHp, attack, attackIntervalMs, nextAttackAt: attackIntervalMs, element };
 }
 
 const TIER_POOLS: Record<MonsterTier, MonsterDefinition[]> = {
@@ -295,6 +306,7 @@ export class WaveManager {
         maxHp: monster.maxHp,
         attack: monster.attack,
         isEcho: this.state.isEcho,
+        element: monster.element,
       },
       zone: { id: this.state.zoneId, name: this.state.zoneName, isNewZone: this.state.zoneId !== previousZoneId },
     });
@@ -393,7 +405,7 @@ export class WaveManager {
     const maxHp = Math.round(levelStats.maxHp * (1 + modifiers.maxHpBonusPercentSum));
     const attackIntervalMs = Math.round(levelStats.attackIntervalMs / (1 + modifiers.attackSpeedMultiplierSum));
     const revivedHp = Math.max(1, Math.round(maxHp * PHOENIX_REVIVE_HP_FRACTION));
-    const hero = buildCombatant(this.heroDef.id, this.heroDef.name, revivedHp, maxHp, levelStats.attack, attackIntervalMs);
+    const hero = buildCombatant(this.heroDef.id, this.heroDef.name, revivedHp, maxHp, levelStats.attack, attackIntervalMs, this.heroDef.element);
 
     const currentMonster = this.engine.getState().monster;
     const monster = buildCombatant(
@@ -403,6 +415,7 @@ export class WaveManager {
       currentMonster.maxHp,
       currentMonster.attack,
       currentMonster.attackIntervalMs,
+      currentMonster.element,
     );
 
     const { allies, spellCasters } = this.buildAlliesAndSpells(modifiers);
@@ -422,6 +435,7 @@ export class WaveManager {
         id: ECHO_ID,
         name: monster.name,
         tier: this.state.monsterTier,
+        element: monster.element ?? 'light',
         maxHp: monster.maxHp,
         attack: monster.attack,
         attackIntervalMs: monster.attackIntervalMs,
@@ -519,7 +533,7 @@ export class WaveManager {
       const levelBonus = 1 + (this.state.heroProgress.level - 1) * COMPANION_LEVEL_SCALING_PER_LEVEL;
       const outputBonus = rankBonus * levelBonus;
       const upgradedAttack = Math.round(def.attack * outputBonus);
-      const combatant = buildCombatant(def.id, def.name, finalHp, scaledMaxHp, upgradedAttack, scaledIntervalMs);
+      const combatant = buildCombatant(def.id, def.name, finalHp, scaledMaxHp, upgradedAttack, scaledIntervalMs, def.element);
       allies.push({
         combatant,
         role: def.role,
@@ -565,14 +579,16 @@ export class WaveManager {
       const echoMaxHp = Math.max(1, Math.round(maxHp * ECHO_POWER_FRACTION));
       const echoName = `Echo of ${this.heroDef.name}`;
       this.state.monsterName = echoName;
-      monster = buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, attackIntervalMs);
+      this.state.monsterElement = this.heroDef.element;
+      monster = buildCombatant(ECHO_ID, echoName, echoMaxHp, echoMaxHp, echoAttack, attackIntervalMs, this.heroDef.element);
     } else {
       const tierPool = TIER_POOLS[tier];
       const pool = monsterPoolForWave(waveNumber, tierPool);
       const def = pickFrom(pool, this.rng);
       this.state.monsterName = def.name;
+      this.state.monsterElement = def.element;
       const scaled = scaledMonsterStats(def, waveNumber);
-      monster = buildCombatant(def.id, def.name, scaled.maxHp, scaled.maxHp, scaled.attack, def.attackIntervalMs);
+      monster = buildCombatant(def.id, def.name, scaled.maxHp, scaled.maxHp, scaled.attack, def.attackIntervalMs, def.element);
     }
 
     let heroHp = maxHp;
@@ -582,7 +598,7 @@ export class WaveManager {
       heroHp = Math.min(maxHp, beforeHeal + Math.round((maxHp - beforeHeal) * healFraction));
     }
 
-    const hero = buildCombatant(this.heroDef.id, this.heroDef.name, heroHp, maxHp, levelStats.attack, attackIntervalMs);
+    const hero = buildCombatant(this.heroDef.id, this.heroDef.name, heroHp, maxHp, levelStats.attack, attackIntervalMs, this.heroDef.element);
     const { allies, spellCasters } = this.buildAlliesAndSpells(modifiers);
 
     this.seed += 1;

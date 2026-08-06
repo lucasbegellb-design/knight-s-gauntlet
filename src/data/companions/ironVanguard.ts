@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const ironVanguard: CompanionDefinition = {
   id: 'iron_vanguard',
+  element: 'earth',
   name: 'Iron Vanguard',
   rarity: 'rare',
   role: 'tank',

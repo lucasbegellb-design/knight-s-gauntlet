@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const stalwartGuardian: CompanionDefinition = {
   id: 'stalwart_guardian',
+  element: 'earth',
   name: 'Stalwart Guardian',
   rarity: 'common',
   role: 'tank',

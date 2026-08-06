@@ -1,4 +1,5 @@
 import { useRunStore, type CombatSpeed } from '../store/runStore';
+import { AffinityCallout, ElementBadge } from './ElementBadge';
 import { useMetaStore } from '../store/metaStore';
 import { RARITY_COLOR } from '../data/rarity';
 import type { MonsterTier } from '../data/monster.types';
@@ -79,7 +80,10 @@ export function Hud() {
               </div>
             )
           )}
-          <div className="hud-sublabel">{state.monsterName}</div>
+          <div className="hud-sublabel">
+            {state.monsterName} <ElementBadge element={state.monsterElement} compact />
+            <AffinityCallout attacker={state.heroElement} defender={state.monsterElement} />
+          </div>
           <Bar value={state.monsterHp} max={state.monsterMaxHp} color="#e74c3c" />
           <div className="hud-value">
             {formatNumber(state.monsterHp)}/{formatNumber(state.monsterMaxHp)}
@@ -88,7 +92,10 @@ export function Hud() {
 
         <div className="hud-panel">
           <div className="hud-label">Level {state.heroLevel}</div>
-          <div className="hud-sublabel">{state.heroClassName}</div>
+          <div className="hud-sublabel">
+            {state.heroClassName} <ElementBadge element={state.heroElement} compact />
+            <AffinityCallout attacker={state.monsterElement} defender={state.heroElement} />
+          </div>
           <Bar value={state.heroHp} max={state.heroMaxHp} color="#2ecc71" />
           <div className="hud-value">
             {formatNumber(state.heroHp)}/{formatNumber(state.heroMaxHp)} HP

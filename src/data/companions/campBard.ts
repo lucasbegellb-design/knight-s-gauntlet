@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const campBard: CompanionDefinition = {
   id: 'camp_bard',
+  element: 'water',
   name: 'Camp Bard',
   rarity: 'epic',
   role: 'support',

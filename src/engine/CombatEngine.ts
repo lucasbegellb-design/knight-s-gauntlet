@@ -1,5 +1,6 @@
 import { Rng } from './rng';
 import { NEUTRAL_MODIFIERS, type AggregatedModifiers } from './modifiers';
+import { affinityBetween, affinityMultiplier } from './elements';
 import type { AllyUnit, Combatant, CombatEvent, CombatState, SpellCaster } from './types';
 
 const BASE_CRIT_MULTIPLIER = 1.5;
@@ -138,9 +139,15 @@ export class CombatEngine {
     const target = pickWeightedUnit(pool, this.rng);
     const isHeroTarget = target.id === this.heroId;
 
-    const damage = monster.attack;
+    // Monsters still never consult `partyModifiers` (a Phase 3 boundary), but elemental affinity
+    // is a property of the matchup rather than of the party's build, so it cuts both ways.
+    const monsterAffinity = affinityBetween(monster.element, target.element);
+    const damage = Math.max(1, Math.round(monster.attack * affinityMultiplier(monster.element, target.element)));
     target.hp = Math.max(0, target.hp - damage);
     events.push({ type: 'attack', attackerId: monster.id, targetId: target.id, damage, targetHpAfter: target.hp });
+    if (monsterAffinity !== 'neutral') {
+      events.push({ type: 'affinity', attackerId: monster.id, targetId: target.id, affinity: monsterAffinity });
+    }
 
     this.applyReflect(monster, damage, events);
 
@@ -219,10 +226,18 @@ export class CombatEngine {
     }
   }
 
-  /** Computes an attacker's (hero or non-healer ally) damage for this hit, applying crit/burn modifiers and pushing their flavor events. */
+  /**
+   * Computes an attacker's (hero or non-healer ally) damage for this hit, applying elemental
+   * affinity plus crit/burn modifiers and pushing their flavor events. Affinity is applied to
+   * both the main hit and any burn proc so the numbers the player sees always agree with the
+   * WEAK/RESIST callout on screen.
+   */
   private computeAttackDamage(attacker: Combatant, target: Combatant, events: CombatEvent[]): number {
     const mod = this.partyModifiers;
-    let damage = attacker.attack * (1 + mod.damageMultiplierSum) + mod.flatDamageBonusSum;
+    const affinity = affinityBetween(attacker.element, target.element);
+    const affinityMult = affinityMultiplier(attacker.element, target.element);
+
+    let damage = (attacker.attack * (1 + mod.damageMultiplierSum) + mod.flatDamageBonusSum) * affinityMult;
 
     let isCrit = false;
     if (mod.critChanceSum > 0 && this.rng.next() < mod.critChanceSum) {
@@ -232,13 +247,17 @@ export class CombatEngine {
     }
 
     if (mod.burnChanceSum > 0 && this.rng.next() < mod.burnChanceSum) {
-      let burnDamage = attacker.attack * (BASE_BURN_RATIO + mod.burnDamageMultiplierSum);
+      let burnDamage = attacker.attack * (BASE_BURN_RATIO + mod.burnDamageMultiplierSum) * affinityMult;
       if (isCrit) {
         burnDamage *= 1 + mod.critBurnBonusMultiplierSum;
       }
       burnDamage = Math.round(burnDamage);
       damage += burnDamage;
       events.push({ type: 'statusProc', kind: 'burn', targetId: target.id, damage: burnDamage });
+    }
+
+    if (affinity !== 'neutral') {
+      events.push({ type: 'affinity', attackerId: attacker.id, targetId: target.id, affinity });
     }
 
     return Math.round(damage);

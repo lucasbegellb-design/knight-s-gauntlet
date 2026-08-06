@@ -2,6 +2,7 @@ import type { ClassDefinition } from '../class.types';
 
 export const berserkerClass: ClassDefinition = {
   id: 'berserker',
+  element: 'fire',
   name: 'Berserker',
   description: 'Hits hard and heals off the damage, but goes down fast if the fight drags on.',
   statMultiplier: { maxHp: 0.82, attack: 1.3, attackIntervalMs: 0.9 },

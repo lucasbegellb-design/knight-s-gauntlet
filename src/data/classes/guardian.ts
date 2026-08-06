@@ -2,6 +2,7 @@ import type { ClassDefinition } from '../class.types';
 
 export const guardianClass: ClassDefinition = {
   id: 'guardian',
+  element: 'earth',
   name: 'Guardian',
   description: 'Slow and hits soft, but shrugs off hits and punishes attackers who get close.',
   statMultiplier: { maxHp: 1.4, attack: 0.82, attackIntervalMs: 1.15 },

@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const astralSeraph: CompanionDefinition = {
   id: 'astral_seraph',
+  element: 'light',
   name: 'Astral Seraph',
   rarity: 'mythic',
   role: 'support',

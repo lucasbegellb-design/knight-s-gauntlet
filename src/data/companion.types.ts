@@ -1,5 +1,6 @@
 import type { Rarity } from './rarity';
 import type { RelicModifier } from './relic.types';
+import type { Element } from '../engine/elements';
 
 export type CompanionRole = 'tank' | 'dps' | 'healer' | 'support' | 'summoner';
 
@@ -8,6 +9,8 @@ export interface CompanionDefinition {
   name: string;
   rarity: Rarity;
   role: CompanionRole;
+  /** Elemental affinity — drives squad-vs-zone matchups. */
+  element: Element;
   description: string;
   maxHp: number;
   attack: number;

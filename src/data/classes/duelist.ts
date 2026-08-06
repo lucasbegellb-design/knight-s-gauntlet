@@ -2,6 +2,7 @@ import type { ClassDefinition } from '../class.types';
 
 export const duelistClass: ClassDefinition = {
   id: 'duelist',
+  element: 'thunder',
   name: 'Duelist',
   description: 'Fast, precise strikes that land brutal crits. Fragile if the enemy gets a hit in first.',
   statMultiplier: { maxHp: 0.88, attack: 1.05, attackIntervalMs: 0.78 },

@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const wanderingCleric: CompanionDefinition = {
   id: 'wandering_cleric',
+  element: 'light',
   name: 'Wandering Cleric',
   rarity: 'rare',
   role: 'healer',

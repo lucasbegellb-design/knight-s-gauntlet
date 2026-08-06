@@ -2,6 +2,7 @@ import type { CompanionDefinition } from '../companion.types';
 
 export const hearthkeeper: CompanionDefinition = {
   id: 'hearthkeeper',
+  element: 'water',
   name: 'Hearthkeeper',
   rarity: 'epic',
   role: 'healer',
