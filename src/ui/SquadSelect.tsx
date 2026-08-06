@@ -2,7 +2,7 @@ import { allCompanions } from '../data/companions';
 import { classRegistry } from '../data/classes';
 import { useMetaStore } from '../store/metaStore';
 import { MAX_ACTIVE_COMPANIONS } from '../engine/WaveManager';
-import { affinityBetween, ELEMENT_META } from '../engine/elements';
+import { ELEMENT_META, counteredBy, counters, type Element } from '../engine/elements';
 import { GeneratedPortrait } from './RarityIcon';
 import { ElementBadge } from './ElementBadge';
 import type { CompanionDefinition } from '../data/companion.types';
@@ -42,21 +42,17 @@ function formatModifiers(modifiers: RelicModifier[]): string {
 function CompanionCard({
   def,
   index,
-  heroElement,
   onToggle,
   onPromote,
 }: {
   def: CompanionDefinition;
   index: number;
-  heroElement?: ReturnType<typeof classRegistry.get>['element'];
   onToggle: () => void;
   onPromote: () => void;
 }) {
   const selected = index >= 0;
   const isLeader = index === 0;
   const meta = ELEMENT_META[def.element];
-  // Flags a squad that stacks the hero's own weakness — the one thing a new player won't spot.
-  const sharesHeroWeakness = heroElement ? affinityBetween(def.element, heroElement) === 'neutral' : false;
 
   return (
     <div
@@ -94,7 +90,30 @@ function CompanionCard({
           Make leader
         </button>
       )}
-      {sharesHeroWeakness && selected && <span className="squad-card-note">no elemental cover for your class</span>}
+    </div>
+  );
+}
+
+/**
+ * The one piece of elemental advice worth giving, at the squad level rather than per card.
+ *
+ * An earlier version warned on each companion whose element was merely *neutral* against the
+ * hero's, which is the overwhelmingly common case — so it fired on almost every card and told the
+ * player nothing. What actually matters is a single question: the element that counters your class
+ * will show up in the zones, so does anyone in this squad answer it?
+ */
+function CoverageNote({ heroElement, squad }: { heroElement: Element; squad: Element[] }) {
+  const threat = counteredBy(heroElement);
+  const covered = squad.some((element) => counters(element) === threat);
+  const threatMeta = ELEMENT_META[threat];
+
+  return (
+    <div className={`squad-coverage ${covered ? 'squad-coverage-ok' : 'squad-coverage-warn'}`}>
+      <span style={{ color: threatMeta.color }}>
+        {threatMeta.symbol} {threatMeta.label}
+      </span>{' '}
+      enemies counter your class.{' '}
+      {covered ? 'Your squad has an answer to them.' : 'Nobody in this squad answers them — you will take that matchup alone.'}
     </div>
   );
 }
@@ -117,7 +136,8 @@ export function SquadSelect() {
   const classDef = classRegistry.tryGet(selectedClassId ?? '');
   const unlocked = new Set(unlockedCompanionIds);
   const roster = allCompanions.filter((c) => unlocked.has(c.id));
-  const leaderDef = selectedCompanionIds[0] ? allCompanions.find((c) => c.id === selectedCompanionIds[0]) : undefined;
+  const squadDefs = selectedCompanionIds.map((id) => allCompanions.find((c) => c.id === id)).filter((c): c is CompanionDefinition => !!c);
+  const leaderDef = squadDefs[0];
 
   return (
     <div className="hub">
@@ -152,13 +172,14 @@ export function SquadSelect() {
         )}
       </div>
 
+      {classDef && <CoverageNote heroElement={classDef.element} squad={squadDefs.map((def) => def.element)} />}
+
       <div className="squad-grid">
         {roster.map((def) => (
           <CompanionCard
             key={def.id}
             def={def}
             index={selectedCompanionIds.indexOf(def.id)}
-            heroElement={classDef?.element}
             onToggle={() => toggleSquadCompanion(def.id)}
             onPromote={() => promoteSquadLeader(def.id)}
           />

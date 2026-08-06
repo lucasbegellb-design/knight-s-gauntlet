@@ -1454,12 +1454,15 @@ body {
   font-size: 0.68rem;
   cursor: pointer;
 }
-.squad-card-note {
-  display: block;
-  padding: 0 0.5rem 0.5rem;
-  font-size: 0.62rem;
-  color: #b98c8c;
+.squad-coverage {
+  margin: 0 0 0.9rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 0.76rem;
 }
+.squad-coverage-ok { border-color: rgba(123, 255, 176, 0.25); background: rgba(123, 255, 176, 0.06); color: #a9d9bd; }
+.squad-coverage-warn { border-color: rgba(255, 143, 143, 0.25); background: rgba(255, 143, 143, 0.06); color: #d9b1b1; }
 .squad-actions { display: flex; justify-content: center; margin-top: 1.2rem; }
 
 /* ---- Wave affixes (data/affixes.ts) ---- */
