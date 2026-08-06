@@ -110,6 +110,8 @@ export class CombatEngine {
     conditionals: ConditionalModifier[] = [],
     runContext: RunConditionContext = DEFAULT_RUN_CONTEXT,
     monsterTraits: MonsterTraits = {},
+    /** 0..1 of the gauge already filled on wave start (prestige `Primed Gauge`). */
+    burstHeadStart = 0,
   ) {
     // Accepting a bare Combatant keeps every single-enemy call site (and the majority of the
     // test suite) unchanged; a lone monster is just a group of one.
@@ -121,7 +123,9 @@ export class CombatEngine {
       elapsedMs: 0,
       isOver: false,
       winnerId: null,
-      burstGauge: 0,
+      // Clamped below 1 so a head start can never arm the burst before the fight begins — the
+      // player must still be present for the one interaction the game has.
+      burstGauge: Math.max(0, Math.min(0.95, burstHeadStart)),
       burstArmed: false,
     };
     this.rng = new Rng(seed);

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { primaryMonster } from '../engine/CombatEngine';
+import { resolvePrestigeRules } from '../engine/prestige';
 import { playSfx } from '../audio/sfx';
 import { WaveManager, type EquippedItems, type MetaBonuses, type WaveEvent } from '../engine/WaveManager';
 import type { LootOption } from '../engine/loot';
@@ -254,6 +255,7 @@ export class CombatScene extends Phaser.Scene {
         treasuryLevel: meta.treasuryLevel,
       }),
       echoLadder: meta.echoLadder,
+      prestigeRules: resolvePrestigeRules(meta.prestige.upgrades),
     };
   }
 
@@ -486,6 +488,12 @@ export class CombatScene extends Phaser.Scene {
       }
       if (event.type === 'runOver') {
         playSfx('gameOver');
+        const finalState = this.waveManager.getRunState();
+        useMetaStore.getState().recordRunDepth(finalState.waveNumber);
+        // Prestige `Carried Fortune`: a slice of the run's gold is banked as essence on top of
+        // the usual deposit, so a deep run pays into the meta layer as well as the run layer.
+        const carried = resolvePrestigeRules(useMetaStore.getState().prestige.upgrades).carriedFortune;
+        if (carried > 0) useMetaStore.getState().depositCurrency(Math.round(finalState.gold * carried));
         useMetaStore.getState().depositCurrency(this.waveManager.getRunState().gold);
         useMetaStore.getState().depositBrokenParts(this.waveManager.getRunState().brokenParts);
       }

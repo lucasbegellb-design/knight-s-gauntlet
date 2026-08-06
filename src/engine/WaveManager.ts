@@ -8,6 +8,7 @@ import type { MonsterTraits, WaveAffix } from '../data/affixes';
 import { aggregateModifiers, type AggregatedModifiers, type ModifierSource } from './modifiers';
 import { collectConditionals } from './conditionals';
 import { resolveSolitudeModifiers } from './solitude';
+import { NEUTRAL_PRESTIGE_RULES, type PrestigeRules } from './prestige';
 import type { RunConditionContext } from './CombatEngine';
 import { primaryMonster } from './CombatEngine';
 import { generateLootOptions, type LootContext, type LootOption } from './loot';
@@ -157,6 +158,8 @@ export interface MetaBonuses {
   kingdomModifiers: RelicModifier[];
   /** Past builds that beat an Echo, eligible to return as one. Newest first. */
   echoLadder: EchoRecord[];
+  /** Rule changes bought with prestige Sigils. Not stat bonuses — see `engine/prestige.ts`. */
+  prestigeRules: PrestigeRules;
 }
 
 export const DEFAULT_META_BONUSES: MetaBonuses = {
@@ -168,6 +171,7 @@ export const DEFAULT_META_BONUSES: MetaBonuses = {
   forgeWeaponModifiers: [],
   kingdomModifiers: [],
   echoLadder: [],
+  prestigeRules: NEUTRAL_PRESTIGE_RULES,
 };
 
 export interface OwnedRelic {
@@ -357,12 +361,38 @@ export class WaveManager {
       hasUsedPhoenixRevive: false,
     };
     this.state.companions = startingCompanionIds
-      .slice(0, MAX_ACTIVE_COMPANIONS)
+      .slice(0, this.squadCapacity())
       .filter((id) => this.unlockedCompanionIds.has(id) && companionRegistry.tryGet(id) !== undefined)
       .map((id) => ({ id, hp: companionRegistry.get(id).maxHp }));
     this.leaderCompanionId = this.state.companions[0]?.id ?? null;
+    this.grantStartingRelics();
 
     this.engine = this.buildWaveEngine(1);
+  }
+
+  /**
+   * Prestige `Issued Kit`: seeds the run with random relics before wave one. Uses the main rng
+   * stream so a seeded run reproduces its opening hand, and only unique/stackable relics from the
+   * registry — no special-cased picks, so the grant benefits from every relic added later.
+   */
+  private grantStartingRelics(): void {
+    const count = Math.max(0, Math.round(this.metaBonuses.prestigeRules.startingRelics));
+    const pool = relicRegistry.all();
+    for (let i = 0; i < count && pool.length > 0; i++) {
+      const def = pool[Math.floor(this.rng.next() * pool.length)];
+      if (!def) continue;
+      const owned = this.state.ownedRelics.find((entry) => entry.id === def.id);
+      if (owned) {
+        if (def.stacking === 'stackable') owned.count += 1;
+      } else {
+        this.state.ownedRelics.push({ id: def.id, count: 1 });
+      }
+    }
+  }
+
+  /** Squad size limit, widened by the prestige `Fourth Chair` sigil. */
+  squadCapacity(): number {
+    return MAX_ACTIVE_COMPANIONS + Math.max(0, Math.round(this.metaBonuses.prestigeRules.extraSquadSlots));
   }
 
   /** The squad leader's id, or null when the run started with no chosen squad. */
@@ -497,7 +527,8 @@ export class WaveManager {
       ownedRelicIds: this.ownedIdCountMap(this.state.ownedRelics),
       ownedCompanionIds: new Set(this.state.companions.map((c) => c.id)),
       unlockedCompanionIds: this.unlockedCompanionIds,
-      companionRosterFull: this.state.companions.length >= MAX_ACTIVE_COMPANIONS,
+      companionRosterFull: this.state.companions.length >= this.squadCapacity(),
+      extraOptions: this.metaBonuses.prestigeRules.extraLootOptions,
       ownedActiveSpellIds: new Set(this.state.activeSpells.map((s) => s.id)),
       activeSpellSlotsFull: this.state.activeSpells.length >= MAX_ACTIVE_SPELLS,
       ownedPassiveSpellIds: this.ownedIdCountMap(this.state.passiveSpells),
@@ -571,6 +602,7 @@ export class WaveManager {
       this.computeConditionals(),
       this.runConditionContext(),
       this.echoTraits ?? this.state.monsterAffix?.traits ?? {},
+      this.metaBonuses.prestigeRules.burstHeadStart,
     );
     events.push({ type: 'revived' });
     return true;
@@ -727,8 +759,11 @@ export class WaveManager {
     // Counts living companions, so a party wiped mid-run ramps the hero up as it happens rather
     // than only at squad-selection time.
     const livingCompanions = this.state.companions.filter((owned) => owned.hp > 0).length;
-    const solitudeModifiers = resolveSolitudeModifiers(livingCompanions, MAX_ACTIVE_COMPANIONS);
-    this.state.emptyCompanionSlots = MAX_ACTIVE_COMPANIONS - livingCompanions;
+    // Measured against the *current* capacity: with a fourth slot unlocked, a three-companion
+    // squad is genuinely understrength and should be compensated as such.
+    const capacity = this.squadCapacity();
+    const solitudeModifiers = resolveSolitudeModifiers(livingCompanions, capacity);
+    this.state.emptyCompanionSlots = capacity - livingCompanions;
     const solitudeSources: ModifierSource[] = solitudeModifiers.length > 0 ? [{ modifiers: solitudeModifiers, count: 1 }] : [];
 
     const brokenBladeSources: ModifierSource[] = this.state.ownedRelics.some((owned) => owned.id === BROKEN_BLADE_ID)
@@ -819,7 +854,8 @@ export class WaveManager {
     const maxHp = Math.round(levelStats.maxHp * (1 + modifiers.maxHpBonusPercentSum));
     const attackIntervalMs = Math.round(levelStats.attackIntervalMs / (1 + modifiers.attackSpeedMultiplierSum));
 
-    this.state.isEcho = waveNumber > 0 && waveNumber % ECHO_WAVE_INTERVAL === 0;
+    const echoInterval = Math.max(5, ECHO_WAVE_INTERVAL - Math.max(0, Math.round(this.metaBonuses.prestigeRules.echoCadenceReduction)));
+    this.state.isEcho = waveNumber > 0 && waveNumber % echoInterval === 0;
 
     let monsters: Combatant[];
     if (this.state.isEcho) {
@@ -913,6 +949,7 @@ export class WaveManager {
       this.computeConditionals(),
       this.runConditionContext(),
       this.echoTraits ?? this.state.monsterAffix?.traits ?? {},
+      this.metaBonuses.prestigeRules.burstHeadStart,
     );
   }
 }

@@ -1630,3 +1630,49 @@ body {
   color: #8f8f8f;
 }
 .solitude-note-full strong { color: inherit; }
+
+/* ---- Prestige / Sealed Record (ui/PrestigeTab.tsx) ---- */
+.prestige-stats {
+  display: flex;
+  gap: 1.4rem;
+  margin: 0.8rem 0;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.prestige-stats > div { display: flex; flex-direction: column; gap: 0.15rem; }
+.prestige-stat-label { color: #8f8f8f; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.prestige-stat-value { color: #ffd84d; font-size: 1.05rem; font-weight: 700; }
+
+.prestige-ledger { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 0.9rem; }
+.prestige-ledger-column {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.prestige-ledger-title { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.prestige-ledger-keep { color: #7bffb0; }
+.prestige-ledger-lose { color: #ff8f8f; }
+.prestige-ledger-column ul { margin: 0.35rem 0 0; padding-left: 1rem; color: #a8a8a8; font-size: 0.72rem; line-height: 1.55; }
+
+.prestige-seal-button { width: 100%; }
+.prestige-locked {
+  padding: 0.7rem 0.9rem;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #8f8f8f;
+  font-size: 0.8rem;
+  text-align: center;
+}
+.prestige-locked strong { color: #d4af37; }
+.prestige-confirm {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(231, 76, 60, 0.4);
+  border-radius: 8px;
+  background: rgba(231, 76, 60, 0.08);
+  color: #e8c4c4;
+  font-size: 0.82rem;
+}
+.prestige-confirm-actions { display: flex; gap: 0.5rem; margin-top: 0.6rem; }

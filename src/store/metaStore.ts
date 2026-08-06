@@ -10,6 +10,8 @@ import { allCompanions, STARTER_COMPANION_IDS } from '../data/companions';
 import { pullGacha, pullGachaMulti, nextPityState, DEFAULT_PITY_STATE, type GachaPullResult, type GachaPityState } from '../engine/gacha';
 import { pendingIdleEssence } from '../engine/idleEssence';
 import type { EchoRecord } from '../engine/WaveManager';
+import { EMPTY_PRESTIGE, canSealRecord, sigilReward, type PrestigeState } from '../engine/prestige';
+import { sigilRegistry } from '../data/prestige';
 import { setMuted } from '../audio/sfx';
 
 /** Keeps the persisted ladder bounded; older records describe builds the player has long outgrown. */
@@ -59,6 +61,8 @@ interface PersistedMeta {
   echoLadder: EchoRecord[];
   /** Persisted audio preference; applied to the sfx module on hydrate and on toggle. */
   audioMuted: boolean;
+  /** Prestige profile: sealed-record count, unspent Sigils, purchased sigil levels, deepest wave. */
+  prestige: PrestigeState;
   /** Pity streak counters carried across every pull (single and x10 alike) — see engine/gacha.ts. */
   gachaPity: GachaPityState;
   /** Kingdom territories conquered / lords recruited (see src/data/kingdom, src/engine/kingdom.ts) — a post-max-level essence sink. */
@@ -94,6 +98,7 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   unlockedCompanionIds: [...STARTER_COMPANION_IDS],
   echoLadder: [],
   audioMuted: false,
+  prestige: EMPTY_PRESTIGE,
   gachaPity: { ...DEFAULT_PITY_STATE },
   conqueredTerritoryIds: [],
   recruitedLordIds: [],
@@ -162,6 +167,11 @@ interface MetaStore extends PersistedMeta {
   collectIdleEssence: () => void;
   /** Records a build that just beat an Echo so it can return as one. */
   recordEchoVictory: (record: EchoRecord) => void;
+  /** Records the deepest wave a run reached, which is what a seal pays out on. */
+  recordRunDepth: (wave: number) => void;
+  /** Ends this profile: resets essence-bought progression, keeps collection, pays Sigils. */
+  sealRecord: () => void;
+  purchaseSigilUpgrade: (upgradeId: string) => void;
   toggleAudioMuted: () => void;
 }
 
@@ -178,6 +188,7 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     unlockedCompanionIds: state.unlockedCompanionIds,
     echoLadder: state.echoLadder,
     audioMuted: state.audioMuted,
+    prestige: state.prestige,
     gachaPity: state.gachaPity,
     conqueredTerritoryIds: state.conqueredTerritoryIds,
     recruitedLordIds: state.recruitedLordIds,
@@ -245,6 +256,51 @@ export const useMetaStore = create<MetaStore>((set) => ({
       const audioMuted = !state.audioMuted;
       setMuted(audioMuted);
       return { audioMuted };
+    }),
+  recordRunDepth: (wave) =>
+    set((state) => (wave > state.prestige.deepestWave ? { prestige: { ...state.prestige, deepestWave: wave } } : state)),
+  sealRecord: () =>
+    set((state) => {
+      if (!canSealRecord(state.prestige.deepestWave)) return state;
+      const earned = sigilReward(state.prestige.deepestWave);
+
+      // What survives is the design statement: everything the player *collected* stays, and
+      // everything they *bought with essence* resets. Taking back a collection is what makes a
+      // prestige feel like a punishment; taking back a spent currency is what gives it something
+      // to do again. Unlocked companions, ascension levels, the Grimoire and the Hall of Echoes
+      // are therefore all deliberately absent from this reset.
+      return {
+        currency: 0,
+        talentRanks: {},
+        companionUpgrades: {},
+        forgeLevel: 0,
+        brokenParts: 0,
+        forgeWeaponLevel: 0,
+        conqueredTerritoryIds: [],
+        recruitedLordIds: [],
+        treasuryLevel: 0,
+        prestige: {
+          count: state.prestige.count + 1,
+          sigils: state.prestige.sigils + earned,
+          upgrades: state.prestige.upgrades,
+          deepestWave: 0,
+        },
+        screen: 'hub' as Screen,
+      };
+    }),
+  purchaseSigilUpgrade: (upgradeId) =>
+    set((state) => {
+      const def = sigilRegistry.tryGet(upgradeId);
+      if (!def) return state;
+      const level = state.prestige.upgrades[upgradeId] ?? 0;
+      if (level >= def.maxLevel || state.prestige.sigils < def.cost) return state;
+      return {
+        prestige: {
+          ...state.prestige,
+          sigils: state.prestige.sigils - def.cost,
+          upgrades: { ...state.prestige.upgrades, [upgradeId]: level + 1 },
+        },
+      };
     }),
   recordEchoVictory: (record) =>
     set((state) => {

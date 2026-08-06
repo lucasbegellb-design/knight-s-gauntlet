@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { NEUTRAL_PRESTIGE_RULES } from './prestige';
 import { WaveManager, type MetaBonuses, type RunState } from './WaveManager';
 import type { CombatEngine } from './CombatEngine';
 import type { HeroDefinition } from '../data/hero.types';
@@ -21,6 +22,7 @@ function makeMetaBonuses(overrides: Partial<MetaBonuses> = {}): MetaBonuses {
     forgeLevel: 0,
     companionUpgrades: {},
     echoLadder: [],
+    prestigeRules: NEUTRAL_PRESTIGE_RULES,
     classModifiers: [],
     forgeWeaponModifiers: [],
     kingdomModifiers: [],

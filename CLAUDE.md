@@ -133,5 +133,16 @@ each monster tier its own per-wave growth coefficient (`TIER_SCALING` in `waveSc
 6. ~~Still single static images, not true animated sprite sheets~~ — partially fixed: every hero/monster/companion now has a second **attack frame** (34/34, txt2img — see Assets section), swapped in during the existing lunge choreography. Still only 2 frames (idle + attack), no hurt/death frames — a true multi-frame sheet remains future work, deliberately scoped out this pass (100+ generations was judged infeasible in one session).
 7. ~~The gacha "pity" concept doesn't exist~~ — fixed: see Gacha section below (`GachaPityState`, `RARE_PITY_THRESHOLD`/`LEGENDARY_PITY_THRESHOLD`).
 8. ~~Companion base stats never rebalanced~~ — partially fixed: `WaveManager.buildAlliesAndSpells` now scales companion attack/heal output by the hero's own level (`COMPANION_LEVEL_SCALING_PER_LEVEL`, +5%/level), the same axis the hero's own attack already grows on, so companions no longer fall behind the wave-scaling curve over a long run purely from being flat. `maxHp` deliberately still isn't level-scaled (would break the wave-clear-heal-fraction bookkeeping — see the code comment). The raw base numbers in `src/data/companions/*.ts` themselves were left untouched — they're reasonably tuned in isolation at wave 1 by rarity/role, the actual problem was the missing growth curve, not the starting values.
-9. General "content feels thin after a few sessions" feedback — Ascension addresses one specific instance (Gacha going stale post-unlock) but the broader concern (a long-term progression goal beyond repeating the same systems) is still open; a prestige/rebirth layer was floated as one option, not yet scoped or built.
+9. ~~No long-term goal beyond repeating the same systems; a prestige layer was floated but never
+   scoped~~ — **built.** `src/engine/prestige.ts` + `src/data/prestige.ts` + `PrestigeTab`. Sealing
+   a record resets everything bought with essence (talents, Forge, Forge Weapon, Kingdom, companion
+   ranks, currency) and keeps everything *collected* (gacha roster, ascension, Grimoire, Hall of
+   Echoes) — taking back a collection is what makes prestige read as punishment. Sigils are paid on
+   **deepest wave reached**, never on currency held, so the reward is for playing rather than
+   idling. The hard rule: **a Sigil buys a rule change, never a bigger number** — extra loot options,
+   a fourth squad slot, a pre-charged Brave Burst, a shorter Echo cadence, an opening hand of
+   relics, carried gold. `prestige.test.ts` fails if anyone adds a stat bonus to the catalogue.
+   `PrestigeRules` is deliberately a plain value object rather than another `RelicModifier[]`:
+   these are the rules a run is assembled from, not entries in the stat pipeline.
+9b. General "content feels thin after a few sessions" feedback — Ascension addresses one specific instance (Gacha going stale post-unlock) but the broader concern (a long-term progression goal beyond repeating the same systems) is still open; a prestige/rebirth layer was floated as one option, not yet scoped or built.
 10. ~~Kingdom territories/lords have no dedicated art~~ — fixed: territories/lords now have generated art (see Assets section).

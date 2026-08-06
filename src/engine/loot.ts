@@ -29,6 +29,8 @@ export interface LootContext {
   goldMultiplier: number;
   /** Permanent meta-progression bonus (from talents) shifting rarity odds away from common, toward rarer tiers. */
   luckBonus: number;
+  /** Extra options beyond the base offering, bought with prestige Sigils. */
+  extraOptions?: number;
 }
 
 const LOOT_OPTIONS_PER_OFFERING = 3;
@@ -136,7 +138,9 @@ export function generateLootOptions(rng: Rng, context: LootContext): LootOption[
   const usedCompanionIds = new Set<string>();
   const usedSpellIds = new Set<string>();
 
-  while (options.length < LOOT_OPTIONS_PER_OFFERING) {
+  const targetCount = LOOT_OPTIONS_PER_OFFERING + Math.max(0, context.extraOptions ?? 0);
+
+  while (options.length < targetCount) {
     const category = pickWeighted(rng, CATEGORY_WEIGHTS).kind;
 
     if (category === 'relic') {

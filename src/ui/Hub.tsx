@@ -26,6 +26,7 @@ import { WorldTab } from './WorldTab';
 import { KingdomTab } from './KingdomTab';
 import { IdleEssenceBanner } from './IdleEssenceBanner';
 import { EchoesTab } from './EchoesTab';
+import { PrestigeTab } from './PrestigeTab';
 import { ElementBadge } from './ElementBadge';
 
 const MODIFIER_LABEL: Record<string, string> = {
@@ -46,7 +47,7 @@ const BRANCH_LABEL: Record<TalentBranch, string> = {
   economy: 'Economy',
 };
 
-const TABS = ['talents', 'forge', 'gacha', 'companions', 'kingdom', 'echoes', 'grimoire', 'world'] as const;
+const TABS = ['talents', 'forge', 'gacha', 'companions', 'kingdom', 'echoes', 'prestige', 'grimoire', 'world'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   talents: 'Talents',
@@ -55,6 +56,7 @@ const TAB_LABEL: Record<Tab, string> = {
   companions: 'Companions',
   kingdom: 'Kingdom',
   echoes: 'Echoes',
+  prestige: 'Prestige',
   grimoire: 'Grimoire',
   world: 'World',
 };
@@ -65,6 +67,7 @@ const TAB_ICON: Record<Tab, string> = {
   companions: '🤝',
   kingdom: '🏰',
   echoes: '☾',
+  prestige: '◈',
   grimoire: '📖',
   world: '🗺️',
 };
@@ -382,6 +385,7 @@ export function Hub() {
       {tab === 'companions' && <CompanionsTab />}
       {tab === 'kingdom' && <KingdomTab />}
       {tab === 'echoes' && <EchoesTab />}
+      {tab === 'prestige' && <PrestigeTab />}
       {tab === 'grimoire' && <GrimoireTab />}
       {tab === 'world' && <WorldTab />}
 
