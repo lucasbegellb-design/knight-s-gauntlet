@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { playSfx } from '../audio/sfx';
 import { WaveManager, type EquippedItems, type MetaBonuses, type WaveEvent } from '../engine/WaveManager';
 import type { LootOption } from '../engine/loot';
 import { scaleHeroDefinition, xpForNextLevel } from '../engine/heroProgression';
@@ -61,6 +62,8 @@ const GAME_HEIGHT = 450;
 const ZONE_SCRIM_ALPHA = 0.35;
 
 const ATTACK_LUNGE_DISTANCE = 34;
+/** HUD refresh cadence. Fast enough to read as live, slow enough to stop dominating the frame. */
+const HUD_SNAPSHOT_INTERVAL_MS = 66;
 const ATTACK_LUNGE_OUT_MS = 130;
 const ATTACK_LUNGE_BACK_MS = 160;
 const HIT_SHAKE_DISTANCE = 7;
@@ -134,6 +137,13 @@ export class CombatScene extends Phaser.Scene {
   private lastLootChoiceToken = 0;
   private lastAbandonRunToken = 0;
   private lastBurstToken = 0;
+  /**
+   * Wall-clock of the last HUD snapshot. The snapshot rebuilds four arrays and re-renders every
+   * subscribed React component; at 60fps that is the single largest source of allocation and
+   * render work in the game, for numbers a player cannot read faster than ~15Hz anyway. State
+   * changes that matter (loot offered, wave started, run over) push immediately regardless.
+   */
+  private lastSnapshotAt = 0;
   private heroTint = 0xffffff;
   private heroClassId = 'knight';
   /** Set by a critHit event, consumed by the attack event that immediately follows it (CombatEngine always emits them in that order). */
@@ -200,7 +210,10 @@ export class CombatScene extends Phaser.Scene {
     const events = this.waveManager.tick(delta * store.speed);
     this.handleEvents(events);
     this.syncUnitViews();
-    this.pushSnapshotToStore();
+    // A wave boundary or a run ending must reach the HUD on the frame it happens; everything
+    // else is just numbers ticking down and can ride the throttle.
+    if (events.length > 0) this.pushSnapshotToStore();
+    else this.pushSnapshotThrottled();
   }
 
   private buildMetaBonuses(classModifiers: MetaBonuses['classModifiers']): MetaBonuses {
@@ -354,7 +367,18 @@ export class CombatScene extends Phaser.Scene {
         this.rebuildAllyViews();
         if (!event.monster.isEcho) useMetaStore.getState().discover('monster', event.monster.id);
         if (event.monster.isEcho) {
-          this.showFloatingText(400, 34, 'AN ECHO OF YOURSELF STIRS...', '#b39dff', 18);
+          const record = event.monster.echoRecord;
+          this.showFloatingText(
+            400,
+            34,
+            record ? `THE ${record.className.toUpperCase()} OF WAVE ${record.wave} RETURNS...` : 'AN ECHO OF YOURSELF STIRS...',
+            '#b39dff',
+            18,
+          );
+          playSfx('echo');
+        }
+        if (event.monster.affix) {
+          this.showFloatingText(MONSTER_X, MONSTER_Y - 210, event.monster.affix.name.toUpperCase(), event.monster.affix.color, 18);
         }
         if (event.zone.isNewZone) {
           this.applyZoneBackground();
@@ -370,6 +394,7 @@ export class CombatScene extends Phaser.Scene {
       }
       if (event.type === 'levelUp') {
         this.showFloatingText(HERO_X, HERO_Y - 155, 'LEVEL UP!', '#f1c40f', 20);
+        playSfx('levelUp');
       }
       if (event.type === 'revived') {
         this.showFloatingText(HERO_X, HERO_Y - 155, 'REVIVED!', '#ff3b6b', 20);
@@ -379,11 +404,13 @@ export class CombatScene extends Phaser.Scene {
       }
       if (event.type === 'lootChosen') {
         this.discoverLootOption(event.option);
+        playSfx('loot');
       }
       if (event.type === 'echoDefeated') {
         useMetaStore.getState().recordEchoVictory(event.record);
       }
       if (event.type === 'runOver') {
+        playSfx('gameOver');
         useMetaStore.getState().depositCurrency(this.waveManager.getRunState().gold);
         useMetaStore.getState().depositBrokenParts(this.waveManager.getRunState().brokenParts);
       }
@@ -407,14 +434,17 @@ export class CombatScene extends Phaser.Scene {
       const wasCrit = this.pendingCrit;
       this.pendingCrit = false;
       if (attackerView) this.attackLunge(attackerView, targetView?.baseX ?? attackerView.baseX);
+      const monsterIsAttacker = event.attackerId === this.waveManager.getCombatState().monster.id;
       // Delay the impact (flash/shake/burst/number) until the attacker's lunge actually reaches the target — a real hit-stop beat instead of everything firing at once.
       this.time.delayedCall(ATTACK_LUNGE_OUT_MS, () => {
         if (targetView) this.hitImpact(targetView, event.damage, wasCrit);
+        playSfx(wasCrit ? 'crit' : monsterIsAttacker ? 'monsterHit' : 'hit');
       });
     }
     if (event.type === 'death') {
       const view = this.viewForId(event.combatantId, heroId);
       if (view) this.deathAnimation(view);
+      playSfx('death');
     }
     if (event.type === 'critHit') {
       this.pendingCrit = true;
@@ -443,6 +473,48 @@ export class CombatScene extends Phaser.Scene {
       const prefix = event.effect === 'heal' ? '+' : '-';
       if (pos) this.showFloatingText(pos.x, pos.y - 175, `${prefix}${event.amount}`, color);
     }
+    if (event.type === 'affinity') {
+      // Only the party's own hits get the callout — echoing it for every monster swing as well
+      // would double the on-screen noise for the same piece of information.
+      if (event.attackerId !== this.waveManager.getCombatState().monster.id) {
+        const strong = event.affinity === 'strong';
+        this.showFloatingText(MONSTER_X, MONSTER_Y - 130, strong ? 'WEAK POINT!' : 'RESISTED', strong ? '#7bffb0' : '#ff8f8f', strong ? 20 : 16);
+        playSfx(strong ? 'affinityStrong' : 'affinityWeak');
+      }
+    }
+    if (event.type === 'thorns') {
+      const pos = this.positionForId(event.attackerId, heroId) ?? { x: HERO_X, y: HERO_Y };
+      this.showFloatingText(pos.x, pos.y - 150, `-${event.damage} thorns`, '#9be07b');
+    }
+    if (event.type === 'monsterHeal') {
+      this.showFloatingText(MONSTER_X, MONSTER_Y - 145, `+${event.amount}`, '#7bffc4', 14);
+    }
+    if (event.type === 'burstReady') {
+      this.showFloatingText(400, 150, 'BRAVE BURST READY', '#ffd84d', 20);
+      playSfx('burstReady');
+    }
+    if (event.type === 'braveBurst') {
+      this.playBurstFlourish(event.manual, event.damage);
+    }
+  }
+
+  /**
+   * The squad-wide burst gets the biggest presentation in the game: a full-screen flash, a heavy
+   * camera shake and every contributor lunging at once. A manual burst reads louder than the
+   * auto-fire so the player can feel that catching the window mattered.
+   */
+  private playBurstFlourish(manual: boolean, damage: number): void {
+    playSfx('burstFire');
+    this.cameras.main.shake(manual ? 380 : 240, manual ? 0.022 : 0.013);
+    this.cameras.main.flash(manual ? 260 : 160, 255, 232, 138, false);
+
+    if (this.heroView) this.attackLunge(this.heroView, MONSTER_X);
+    this.allyViews.forEach((view, index) => {
+      this.time.delayedCall(index * 55, () => this.attackLunge(view, MONSTER_X));
+    });
+
+    this.showFloatingText(400, 120, manual ? 'BRAVE BURST!' : 'brave burst', '#ffe98a', manual ? 30 : 22);
+    this.showFloatingText(MONSTER_X, MONSTER_Y - 195, `-${damage}`, '#ffd84d', manual ? 30 : 24);
   }
 
   private viewForId(id: string, heroId: string): UnitView | undefined {
@@ -504,7 +576,16 @@ export class CombatScene extends Phaser.Scene {
     });
   }
 
+  /** Snapshot on the HUD's own cadence rather than the renderer's. */
+  private pushSnapshotThrottled(): void {
+    const now = this.time.now;
+    if (now - this.lastSnapshotAt < HUD_SNAPSHOT_INTERVAL_MS) return;
+    this.lastSnapshotAt = now;
+    this.pushSnapshotToStore();
+  }
+
   private pushSnapshotToStore(): void {
+    this.lastSnapshotAt = this.time.now;
     const combat = this.waveManager.getCombatState();
     const run = this.waveManager.getRunState();
 

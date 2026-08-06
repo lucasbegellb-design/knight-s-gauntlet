@@ -1,5 +1,6 @@
 import { useRunStore, type CombatSpeed } from '../store/runStore';
 import { AffinityCallout, ElementBadge } from './ElementBadge';
+import { resumeAudio } from '../audio/sfx';
 import { useMetaStore } from '../store/metaStore';
 import { RARITY_COLOR } from '../data/rarity';
 import type { MonsterTier } from '../data/monster.types';
@@ -64,6 +65,24 @@ function Bar({ value, max, color }: { value: number; max: number; color: string 
  * base power a moment later. Nothing is lost by never touching it, which is the point — an idle
  * game earns its one interaction only if declining it is still a complete way to play.
  */
+function MuteButton() {
+  const audioMuted = useMetaStore((s) => s.audioMuted);
+  const toggleAudioMuted = useMetaStore((s) => s.toggleAudioMuted);
+  return (
+    <button
+      type="button"
+      className="speed-button"
+      title={audioMuted ? 'Unmute' : 'Mute'}
+      onClick={() => {
+        resumeAudio();
+        toggleAudioMuted();
+      }}
+    >
+      {audioMuted ? '🔇' : '🔊'}
+    </button>
+  );
+}
+
 function BraveBurstBar() {
   const gauge = useRunStore((s) => s.burstGauge);
   const armed = useRunStore((s) => s.burstArmed);
@@ -78,7 +97,17 @@ function BraveBurstBar() {
       <div className="burst-track">
         <div className="burst-fill" style={{ width: `${Math.min(1, gauge) * 100}%` }} />
       </div>
-      <button type="button" className="burst-button" disabled={!armed} onClick={() => requestBurst()}>
+      <button
+        type="button"
+        className="burst-button"
+        disabled={!armed}
+        onClick={() => {
+          // Browsers refuse to start an AudioContext without a user gesture; the burst button is
+          // the most-pressed control in the game, so it doubles as the unlock.
+          resumeAudio();
+          requestBurst();
+        }}
+      >
         {armed ? 'UNLEASH ×1.5' : `${Math.round(Math.min(1, gauge) * 100)}%`}
       </button>
     </div>
@@ -159,6 +188,7 @@ export function Hud() {
             x{speed}
           </button>
         ))}
+        <MuteButton />
         {state.brokenParts > 0 && <span className="hud-sublabel">⚙️ {state.brokenParts} broken parts</span>}
         <span className="gold-display">🪙 {state.gold} gold</span>
         <button

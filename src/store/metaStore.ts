@@ -10,6 +10,7 @@ import { allCompanions, STARTER_COMPANION_IDS } from '../data/companions';
 import { pullGacha, pullGachaMulti, nextPityState, DEFAULT_PITY_STATE, type GachaPullResult, type GachaPityState } from '../engine/gacha';
 import { pendingIdleEssence } from '../engine/idleEssence';
 import type { EchoRecord } from '../engine/WaveManager';
+import { setMuted } from '../audio/sfx';
 
 /** Keeps the persisted ladder bounded; older records describe builds the player has long outgrown. */
 export const MAX_ECHO_LADDER_ENTRIES = 12;
@@ -56,6 +57,8 @@ interface PersistedMeta {
   unlockedCompanionIds: string[];
   /** Builds that have beaten an Echo, newest first — they return as Echoes in later runs. */
   echoLadder: EchoRecord[];
+  /** Persisted audio preference; applied to the sfx module on hydrate and on toggle. */
+  audioMuted: boolean;
   /** Pity streak counters carried across every pull (single and x10 alike) — see engine/gacha.ts. */
   gachaPity: GachaPityState;
   /** Kingdom territories conquered / lords recruited (see src/data/kingdom, src/engine/kingdom.ts) — a post-max-level essence sink. */
@@ -90,6 +93,7 @@ const DEFAULT_PERSISTED: PersistedMeta = {
   forgeWeaponLevel: 0,
   unlockedCompanionIds: [...STARTER_COMPANION_IDS],
   echoLadder: [],
+  audioMuted: false,
   gachaPity: { ...DEFAULT_PITY_STATE },
   conqueredTerritoryIds: [],
   recruitedLordIds: [],
@@ -158,6 +162,7 @@ interface MetaStore extends PersistedMeta {
   collectIdleEssence: () => void;
   /** Records a build that just beat an Echo so it can return as one. */
   recordEchoVictory: (record: EchoRecord) => void;
+  toggleAudioMuted: () => void;
 }
 
 function persistedSlice(state: MetaStore): PersistedMeta {
@@ -172,6 +177,7 @@ function persistedSlice(state: MetaStore): PersistedMeta {
     forgeWeaponLevel: state.forgeWeaponLevel,
     unlockedCompanionIds: state.unlockedCompanionIds,
     echoLadder: state.echoLadder,
+    audioMuted: state.audioMuted,
     gachaPity: state.gachaPity,
     conqueredTerritoryIds: state.conqueredTerritoryIds,
     recruitedLordIds: state.recruitedLordIds,
@@ -234,6 +240,12 @@ export const useMetaStore = create<MetaStore>((set) => ({
       return { selectedCompanionIds: [companionId, ...state.selectedCompanionIds.filter((id) => id !== companionId)] };
     }),
   confirmSquad: () => set({ screen: 'run' as Screen }),
+  toggleAudioMuted: () =>
+    set((state) => {
+      const audioMuted = !state.audioMuted;
+      setMuted(audioMuted);
+      return { audioMuted };
+    }),
   recordEchoVictory: (record) =>
     set((state) => {
       // Newest first, and capped: an unbounded ladder would grow with every run forever, and the
@@ -381,6 +393,9 @@ void (async () => {
   try {
     const saved = await idbGet<PersistedMeta>(STORAGE_KEY);
     if (saved) useMetaStore.setState(saved);
+    // The sfx module holds its own mute flag (it is called from the Phaser loop and must not
+    // reach into the store), so the persisted preference has to be pushed to it on load.
+    setMuted(useMetaStore.getState().audioMuted);
   } finally {
     useMetaStore.setState({ hydrated: true });
     useMetaStore.subscribe((state) => {

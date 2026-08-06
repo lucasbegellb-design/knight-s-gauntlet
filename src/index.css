@@ -1493,3 +1493,12 @@ body {
   font-size: 0.82rem;
   color: #9a9a9a;
 }
+
+/* ---- Phaser container (ui/PhaserGame.tsx) ---- */
+.phaser-container { position: relative; }
+.phaser-load-error {
+  padding: 2rem;
+  color: #b98c8c;
+  font-size: 0.85rem;
+  text-align: center;
+}
