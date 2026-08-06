@@ -120,6 +120,75 @@ re-deriving it, which is the most expensive kind of repeat work there is.
 - Write the *why* down once, in the code, next to the thing it explains. A comment that records a
   rejected alternative is worth more than one that restates the line below it.
 
+---
+
+## Splitting the work across sub-agents
+
+A sub-agent is **not automatically cheaper**. It starts cold: it re-derives context the caller
+already has, re-reads the files, and has to be briefed. Splitting a session up by reflex makes it
+slower and more expensive, not less.
+
+There is one rule, and it is about ratios:
+
+> **Delegate when the input dwarfs the output.**
+> A job that reads 40,000 characters of log and answers in one sentence is worth spawning, because
+> the caller never pays for the 40,000. A job that needs the caller's context explained back to it
+> is not.
+
+### Worth it
+
+| Job | Input | Output | Agent |
+|---|---|---|---|
+| Why is CI red | job logs, tens of thousands of chars | one sentence | `ci-doctor` |
+| What does this constant do to balance | 4 × 400-run simulation | one table | `balance-sweeper` |
+| Does the UI actually work | browser logs, DOM, screenshots | a short findings list | `playtester` |
+| Where is X handled across the repo | many files | 3 line references | built-in `Explore` |
+
+### Not worth it
+
+- **Anything under a few minutes of work.** The brief costs more than the task.
+- **Work that depends on a decision you have not made yet.** You will brief it twice.
+- **Sequential steps.** Two agents that must run in order are one agent with extra hand-offs.
+- **Anything needing the conversation's history.** A sub-agent cannot see it, and re-explaining it
+  is the expensive path.
+- **Finding a definition.** `node scripts/agent/map.mjs` answers it for near-zero cost. Only reach
+  for `Explore` when the question is about behaviour spread across files, not about a location.
+- **Writing small batches of text.** `content-author` says so itself: under ~20 entries, inline it.
+
+### What makes a cold start cheap here
+
+The three things a sub-agent needs to be productive already exist, which is what makes any of this
+viable:
+
+1. `CLAUDE.md` is ~1,300 tokens and is loaded automatically.
+2. `npm run map` replaces exploration with one call.
+3. `npm run verify` replaces four commands, and gets the `tsc` trap right.
+
+So a good brief is short: *what to do, what shape to answer in, and which of these three to run.*
+If you find yourself writing more than about fifteen lines of brief, the job probably was not
+separable.
+
+### Briefing rules
+
+- **Name the output shape.** Every agent in `.claude/agents/` ends with an exact template. An agent
+  that returns prose forces the caller to read and re-summarise it — that is the cost you were
+  trying to avoid.
+- **Say what not to do.** "Do not fix anything", "do not paste the log", "restore the constant".
+  Scope creep in a sub-agent is invisible until it lands.
+- **Give the known traps.** `ci-doctor` knows the Pages-stall signature; without it, it would
+  rediscover it by rewriting a correct workflow.
+- **Do not downgrade the model for judgement work.** Cheap models are right for reading logs and
+  running loops. They are wrong for writing the game's voice — `content-author` stays on the strong
+  model deliberately, and says why.
+- **Relay what matters.** A sub-agent's report is not shown to the user. Summarise it; do not
+  forward it verbatim.
+
+### Parallelism
+
+Independent jobs can run at once — a balance sweep and a playtest do not touch each other. Two jobs
+that write to the same files cannot, and will produce a merge you have to untangle by hand. Check
+for file overlap before spawning in parallel, not after.
+
 ## Budget per chantier
 
 | Item | Target |

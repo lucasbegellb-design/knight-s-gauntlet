@@ -13,6 +13,7 @@ Gungeon-style loot rarity, FF Brave Exvius art direction, Ankama-style single co
 | The cosmology, and the writing rules for any player-facing text | `LORE.md` |
 | Where the design is heading, and the research behind it | `ROADMAP.md` |
 | How to work here without burning tokens | `CONTRIBUTING_AGENT.md` — **read this first** |
+| When to split work across sub-agents | `CONTRIBUTING_AGENT.md`, and `.claude/agents/` for the roles |
 
 ## Branch
 
